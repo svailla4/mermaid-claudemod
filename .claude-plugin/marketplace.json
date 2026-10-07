@@ -1,0 +1,13 @@
+{
+  "name": "mermaid-render",
+  "description": "Personal Claude Code mods: Mermaid diagrams drawn in the terminal.",
+  "owner": {
+    "name": "Stephane Vaillancourt"
+  },
+  "plugins": [
+    {
+      "name": "mermaid-render",
+      "source": "./"
+    }
+  ]
+}

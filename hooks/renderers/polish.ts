@@ -50,8 +50,8 @@ const ARMS = new Map<string, number>([
   ['╎', UP | DOWN],
   ['┆', UP | DOWN],
   ['┊', UP | DOWN],
-  // A decision's corners join the sides it shares with the box drawn on it.
-  ['◇', UP | RIGHT | DOWN | LEFT],
+  // A shape's corners join the sides it shares with the box drawn on it.
+  ...Array.from('◇◯()⌜⌝⌞⌟', (ch): [string, number] => [ch, UP | RIGHT | DOWN | LEFT]),
   ['▼', UP],
   ['▲', DOWN],
   ['►', LEFT],
@@ -61,18 +61,25 @@ const ARMS = new Map<string, number>([
 ])
 
 const armsOf = (c: Cell | undefined) => (c ? (ARMS.get(c.ch) ?? 0) : 0)
-const isGlyph = (ch: string) => ch >= '─' && ch <= '╿'
+
+// A class member's visibility marks, which the library draws as frame.
+const VISIBILITY = '+-#~'
+// The corners of decisions, circles, stadiums and hexagons.
+const SHAPE_CORNERS = '◇◯()⌜⌝⌞⌟'
 
 /**
- * A decision's diamond corners come tagged as text and a class member's
- * visibility mark as border: each takes the role it shows.
+ * Cells take the role they show: a shape's corners come tagged as text, and
+ * are frame wherever a frame's edge runs from them; a class member's
+ * visibility mark comes tagged as frame, and is text.
  */
 function retag(grid: Grid): void {
   for (const row of grid) {
-    for (const c of row) {
-      if (c.ch === '◇') c.role = ROLE.border
-      else if (c.role === ROLE.border && !isGlyph(c.ch)) c.role = ROLE.label
-    }
+    row.forEach((c, x) => {
+      const isEdgeOfFrame = (n: Cell | undefined) => n?.ch === '─' && n.role === ROLE.border
+      const isCorner = SHAPE_CORNERS.includes(c.ch) && (isEdgeOfFrame(row[x - 1]) || isEdgeOfFrame(row[x + 1]))
+      if (c.role === ROLE.label && isCorner) c.role = ROLE.border
+      else if (c.role === ROLE.border && VISIBILITY.includes(c.ch)) c.role = ROLE.label
+    })
   }
 }
 
@@ -100,23 +107,31 @@ function classifyText(grid: Grid): void {
   }
 }
 
+// The dashes a frame's edge or a divider is drawn with.
+const DASHES = '─╌'
+
 /**
- * A title the library writes into a frame's top edge right after its corner
- * (`┌loop [x]─────┐`) moves in a little and gets air (`┌─ loop [x] ──┐`),
- * when the edge has the dashes to spare.
+ * A title the library writes into a frame's edge right after its corner
+ * (`┌loop [x]─────┐`, `├[else]╌╌╌╌┤`) is a label on a frame, dashes and
+ * all, and moves in a little with air around it (`┌─ loop [x] ──┐`) when
+ * the edge has dashes to spare.
  */
 function spaceTitles(grid: Grid): void {
   for (const row of grid) {
     for (let x = 0; x + 1 < row.length; x++) {
-      if (!'┌╭'.includes(row[x]!.ch) || row[x + 1]!.role !== ROLE.label) continue
+      const isText = (c: Cell | undefined) => c?.role === ROLE.label || c?.role === ROLE.edgeLabel
+      if (!'┌╭├'.includes(row[x]!.ch) || !isText(row[x + 1])) continue
       let end = x + 1
-      while (end < row.length && row[end]!.role !== ROLE.border) end++
+      while (end < row.length && (isText(row[end]) || row[end]!.ch === ' ')) end++
+      const dash = row[end]
+      if (!dash || !DASHES.includes(dash.ch)) continue
+
+      const title = row.slice(x + 1, end)
+      for (const c of title) if (c.ch !== ' ') c.role = ROLE.label
       let dashes = 0
-      while (row[end + dashes]?.ch === '─') dashes++
+      while (row[end + dashes]?.ch === dash.ch) row[end + dashes++]!.role = ROLE.border
       if (dashes < 3) continue
 
-      const dash = row[end]!
-      const title = row.slice(x + 1, end)
       const gap: Cell = { ch: ' ', role: ROLE.plain }
       const rest = Array.from({ length: dashes - 3 }, () => ({ ...dash }))
       row.splice(x + 1, end + dashes - x - 1, { ...dash }, gap, ...title, { ...gap }, ...rest)
@@ -166,10 +181,13 @@ const rolesOf = (row: Cell[]) => row.map(c => c.role).join('')
 /** A row holding only vertical strokes: it stretches what crosses it and says nothing. */
 const isStretch = (row: Cell[]) => row.every(c => c.ch === ' ' || c.ch === '│')
 
+/** A row holding only box sides and dividers, as an empty class section leaves twice. */
+const isDivider = (row: Cell[]) => row.some(c => c.ch === '├') && row.every(c => ' │├─┤'.includes(c.ch))
+
 /**
  * The grid without the rows that only stretch it: a run of identical stretch
- * rows keeps one (edges drawn three rows long become one), and a blank row
- * inside boxes, framed by more of them above or below, goes.
+ * or divider rows keeps one (edges drawn three rows long become one), and a
+ * blank row inside boxes, framed by more of them above or below, goes.
  */
 function squeeze(grid: Grid): Grid {
   const kept: Grid = []
@@ -177,10 +195,9 @@ function squeeze(grid: Grid): Grid {
   for (let y = 0; y < grid.length; y++) {
     const row = grid[y]!
     const prev = kept[kept.length - 1]
-    if (prev && isStretch(row)) {
-      if (textOf(prev) === textOf(row) && rolesOf(prev) === rolesOf(row)) continue
-      if (isPadding(row, prev, grid[y + 1])) continue
-    }
+    const isRepeat = prev !== undefined && textOf(prev) === textOf(row) && rolesOf(prev) === rolesOf(row)
+    if (isRepeat && (isStretch(row) || isDivider(row))) continue
+    if (prev && isStretch(row) && isPadding(row, prev, grid[y + 1])) continue
     kept.push(row)
   }
 
@@ -207,9 +224,10 @@ function isPadding(row: Cell[], above: Cell[], below: Cell[] | undefined): boole
 
 /** The grid tidied: roles retagged, text told apart, junctions mended, stretch rows dropped. */
 export function polish(grid: Grid): Grid {
+  // Titles first, while they are still apart from the shape corners retagged next.
+  spaceTitles(grid)
   retag(grid)
   classifyText(grid)
-  spaceTitles(grid)
   mendJunctions(grid)
   return squeeze(grid)
 }

@@ -235,6 +235,56 @@ test('edges between boxes are one stroke long and boxes hold no blank rows', asy
   for (const line of lines) expect(line).not.toMatch(/^│ +│$/)
 })
 
+test('class diagrams get headings, single dividers and mended junctions', async ($, on) => {
+  const fence = [
+    '```mermaid',
+    'classDiagram',
+    '  class Shape {',
+    '    <<interface>>',
+    '    +area() double',
+    '  }',
+    '  Shape <|-- Circle',
+    '  Shape <|-- Square',
+    '  Shape --> Point : at',
+    '```',
+  ].join('\n')
+  const { art, tree } = await draw($, on, fence)
+  // An empty section leaves no second divider.
+  expect(art).not.toMatch(/├─+┤\n *├─+┤/)
+  // The header, stereotype and name, is a heading; members are not.
+  expect(lookOf(tree, '<<interface>>')).toEqual({ color: 'claude', bold: true })
+  expect(lookOf(tree, 'Shape')).toEqual({ color: 'claude', bold: true })
+  expect(runsOf(tree).some(r => r.text.includes('area'))).toBe(false)
+  // Where edges part ways, a junction, never a corner mid-line.
+  expect(art).not.toMatch(/─[└┘┌┐]─/)
+})
+
+test('a frame title gets air on its edge, and an else divider is part of the frame', async ($, on) => {
+  const fence = [
+    '```mermaid',
+    'sequenceDiagram',
+    '  A->>B: hi',
+    '  alt ok',
+    '    B-->>A: yes',
+    '  else no',
+    '    B-->>A: no',
+    '  end',
+    '```',
+  ].join('\n')
+  const { art, tree } = await draw($, on, fence)
+  expect(art).toMatch(/┌─ alt \[ok\] ─+┐/)
+  expect(art).toMatch(/├╌ \[no\] ╌+┤/)
+  expect(runsOf(tree).some(r => r.text.includes('[no]'))).toBe(false)
+  expect(lookOf(tree, '├╌')).toEqual({ color: 'inactive' })
+})
+
+test('the corners of rounded and decision shapes are drawn as frame', async ($, on) => {
+  const fence = '```mermaid\nflowchart LR\n  A((circle)) --> B{decide}\n```'
+  const { tree } = await draw($, on, fence)
+  expect(lookOf(tree, '◯')).toEqual({ color: 'inactive' })
+  expect(lookOf(tree, '◇')).toEqual({ color: 'inactive' })
+})
+
 test('a sequence diagram with long messages wraps them to fit', async ($, on) => {
   const message = 'ask the assistant to read the uploaded document and prepare every input'
   const fence = [

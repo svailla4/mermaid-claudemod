@@ -4,8 +4,10 @@
 // Crow's-foot lines between boxes tangle on a character grid (they cross
 // boxes and each other), so the relationships are listed instead.
 
-import { parseErDiagram } from './vendor/beautiful-mermaid-ascii.js'
-import type { ErDiagram, ErEntity, Cardinality } from './vendor/beautiful-mermaid-ascii.js'
+import { parseErDiagram } from '../vendor/beautiful-mermaid-ascii.js'
+import type { ErDiagram, ErEntity, Cardinality } from '../vendor/beautiful-mermaid-ascii.js'
+import type { DiagramRenderer } from '../diagram.ts'
+import { pad, padStart, widthOf } from '../lines.ts'
 
 const GAP = 2
 
@@ -15,10 +17,6 @@ const CARDINALITY: Record<Cardinality, string> = {
   many: '1..n',
   'zero-many': '0..n',
 }
-
-const widthOf = (s: string) => Array.from(s).length
-const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - widthOf(s)))
-const padStart = (s: string, w: number) => ' '.repeat(Math.max(0, w - widthOf(s))) + s
 
 /** Entities in source order, each followed as soon as possible by those it relates to. */
 function relatedOrder(diagram: ErDiagram): ErEntity[] {
@@ -116,10 +114,16 @@ function relationshipTable(diagram: ErDiagram): string[] {
 }
 
 /** The diagram's lines; throws when the source holds no entity. */
-export function drawEr(body: string, width: number): string[] {
+function drawEr(body: string, width: number): string[] {
   const lines = body.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
   const diagram = parseErDiagram(lines)
   if (diagram.entities.length === 0) throw new Error('no entities found')
 
   return [...packRows(relatedOrder(diagram).map(box), width), ...relationshipTable(diagram)]
+}
+
+export const er: DiagramRenderer = {
+  kind: 'erDiagram',
+  matches: header => /^erDiagram\s*$/.test(header),
+  draw: drawEr,
 }

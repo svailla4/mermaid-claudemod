@@ -1,5 +1,5 @@
 // The part of beautiful-mermaid's API this mod uses (src/ascii/index.ts,
-// src/er/parser.ts, src/er/types.ts, src/ascii/types.ts).
+// src/er/parser.ts, src/er/types.ts, src/ascii/types.ts, src/parser.ts).
 
 /** Hex colors (`#rrggbb`) for each role a cell can have. */
 export interface AsciiTheme {
@@ -55,3 +55,16 @@ export interface ErDiagram {
 
 /** Takes the diagram's trimmed, non-empty, non-comment lines, header included. */
 export function parseErDiagram(lines: string[]): ErDiagram
+
+export interface MermaidEdge {
+  source: string
+  target: string
+  label?: string
+}
+
+export interface MermaidGraph {
+  edges: MermaidEdge[]
+}
+
+/** Parses a flowchart or state diagram (its whole text, header included); throws on any other kind. */
+export function parseMermaid(text: string): MermaidGraph

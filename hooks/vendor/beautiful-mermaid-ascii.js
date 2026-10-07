@@ -1,4 +1,4 @@
-// beautiful-mermaid 1.1.3 (MIT, lukilabs): the ASCII renderer and the ER parser only. Bundled with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
+// beautiful-mermaid 1.1.3 (MIT, lukilabs): the ASCII renderer, the flowchart/state parser and the ER parser only. Bundled with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
 
 // ../../.claude/jobs/66092017/tmp/pkgs/bm/src/multiline-utils.ts
 function normalizeBrTags(label) {
@@ -5558,5 +5558,6 @@ function renderMermaidASCII(text, options = {}) {
 }
 export {
   parseErDiagram,
+  parseMermaid,
   renderMermaidASCII
 };

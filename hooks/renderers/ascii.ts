@@ -5,6 +5,7 @@ import { renderMermaidASCII } from '../vendor/beautiful-mermaid-ascii.js'
 import type { AsciiRenderOptions, AsciiTheme } from '../vendor/beautiful-mermaid-ascii.js'
 import { ROLE, tidyLines, widestLine } from '../styled.ts'
 import type { Role, StyledLine } from '../styled.ts'
+import { refuseLongPaths } from './guard.ts'
 import { polish } from './polish.ts'
 import type { Cell, Grid } from './polish.ts'
 
@@ -99,6 +100,8 @@ export function drawAscii(
   more: readonly Attempt[] = [],
   finish: Finish = polish,
 ): StyledLine[] {
+  refuseLongPaths(body)
+
   let best: StyledLine[] = []
   let bestWidth = Infinity
 

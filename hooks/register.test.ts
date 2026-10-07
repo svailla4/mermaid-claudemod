@@ -175,3 +175,62 @@ test('a sequence diagram with long messages wraps them to fit', async ($, on) =>
   expect(seen).toContain('uploaded document and prepare')
   expect(seen).toContain('every input')
 })
+
+const WIDE = [
+  '```mermaid',
+  'flowchart TD',
+  `  R[root] --> A[${'a'.repeat(50)}]`,
+  `  R --> B[${'b'.repeat(50)}]`,
+  `  R --> C[${'c'.repeat(50)}]`,
+  '```',
+].join('\n')
+
+test('a diagram cut to fit says how to scroll it, and /diagram opens it in a pane', async ($, on) => {
+  let opened: unknown
+  on('ui.open', (_, e) => {
+    opened = e
+    return { value: { isPlaced: true } }
+  })
+  const { seen } = await draw($, on, WIDE)
+  const hint = /`\/diagram (\d+)` opens it scrollable/.exec(seen!)
+  expect(hint).not.toBeNull()
+
+  const ran = await $.command.run({ command: 'diagram', args: hint![1] })
+  expect(opened).toMatchObject({ id: 'mermaid-diagram', focus: true, closeOnEscape: true })
+  expect(ran.text).toContain(`Diagram ${hint![1]} opened`)
+
+  const pane = await $.ui.mount({
+    plugin: 'mermaid-render',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'mermaid-diagram',
+    props: { title: 'Diagram', isFocused: true, bodyColumns: 60, placement: 'dock' },
+  })
+  const at = async () => (await pane.find({ type: 'Text', text: /^ {2}column \d+ of \d+$/ }))?.text
+  const start = await at()
+  expect(start).toMatch(/column 1 of \d+/)
+  expect(await pane.find({ type: 'Text', text: /aaaa/ })).toBeDefined()
+
+  await pane.press({ key: 'right' })
+  await pane.press({ key: 'right' })
+  await pane.press({ key: 'right' })
+  expect(await at()).toMatch(/column 61 of/)
+  // Scrolled past the first box, the third one's text comes into view.
+  expect(await pane.find({ type: 'Text', text: /bbbb/ })).toBeDefined()
+
+  await pane.press({ key: 'left' })
+  expect(await at()).toMatch(/column 41 of/)
+  await pane.press({ key: 'start' })
+  expect(await at()).toBe(start)
+  await pane.unmount()
+})
+
+test('/diagram with an unknown number says which exist', async $ => {
+  const ran = await $.command.run({ command: 'diagram', args: '99' })
+  expect(ran.text).toMatch(/^No diagram 99/)
+})
+
+test('a diagram that fits gets no scroll hint', async ($, on) => {
+  const { seen } = await draw($, on, FLOW)
+  expect(seen).not.toContain('/diagram')
+})

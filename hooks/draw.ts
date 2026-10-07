@@ -5,7 +5,13 @@ import type { AsciiRenderOptions } from './vendor/beautiful-mermaid-ascii.js'
 import { drawEr } from './er.ts'
 import { diagramBody } from './fences.ts'
 
-export type Drawn = { ok: true; art: string } | { ok: false; error: string }
+/**
+ * A drawing: `art` cut to the width asked for, `lines` the same drawing uncut
+ * (what the scroll pane shows), `isCut` when the two differ.
+ */
+export type Drawn =
+  | { ok: true; art: string; lines: string[]; fullWidth: number; isCut: boolean }
+  | { ok: false; error: string }
 
 // paddingY below 4 puts edge labels on box borders; border padding adds blank
 // rows inside every box.
@@ -99,7 +105,7 @@ function widest(lines: string[]): number {
   return lines.reduce((w, l) => Math.max(w, widthOf(l)), 0)
 }
 
-function cut(line: string, width: number): string {
+export function cut(line: string, width: number): string {
   const chars = Array.from(line)
 
   return chars.length <= width ? line : chars.slice(0, width - 1).join('') + '…'
@@ -140,7 +146,14 @@ export function drawDiagram(source: string, width: number): Drawn {
       }
     }
     const lines = notes.length > 0 ? [...best!, '', ...notes] : best!
-    drawn = { ok: true, art: lines.map(l => cut(l, width)).join('\n') }
+    const fullWidth = widest(lines)
+    drawn = {
+      ok: true,
+      art: lines.map(l => cut(l, width)).join('\n'),
+      lines,
+      fullWidth,
+      isCut: fullWidth > width,
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     drawn = { ok: false, error: message.split('\n')[0]!.slice(0, 160) }

@@ -1,8 +1,9 @@
 {
   "name": "mermaid-render",
-  "version": "0.1.0",
-  "description": "Draws Mermaid diagrams in Claude's terminal replies as Unicode box art, and asks Claude to write diagrams as Mermaid.",
+  "version": "0.2.0",
+  "description": "Draws Mermaid diagrams in Claude's terminal replies as Unicode box art; /diagram scrolls wide ones.",
   "author": {
     "name": "Stephane Vaillancourt"
-  }
+  },
+  "types": "./types/index.d.ts"
 }

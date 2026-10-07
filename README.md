@@ -25,13 +25,13 @@ Requires Claude Code **2.1.292 or later**, the first builds with plugin hook mod
 In Claude Code:
 
 ```
-/plugin install mermaid-render --marketplace svailla4/mermaid-render
+/plugin install mermaid-render --marketplace svailla4/mermaid-claudemod
 ```
 
 Answer `y` to add the marketplace and pick the user scope, so it works in every project. Or, from a shell:
 
 ```bash
-claude plugin marketplace add svailla4/mermaid-render
+claude plugin marketplace add svailla4/mermaid-claudemod
 claude plugin install mermaid-render@mermaid-render --scope user
 ```
 

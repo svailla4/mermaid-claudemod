@@ -234,3 +234,50 @@ test('a diagram that fits gets no scroll hint', async ($, on) => {
   const { seen } = await draw($, on, FLOW)
   expect(seen).not.toContain('/diagram')
 })
+
+test('in fullscreen a wide diagram scrolls inside its own box in the reply', async ($, on) => {
+  const seen: string[] = []
+  on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
+    seen.push(e.props.text)
+    const { Markdown } = $.ui.resolve(e)
+    return Markdown({ text: e.props.text })
+  })
+  const ui = await $.ui.mount({
+    plugin: 'mermaid-render',
+    surface: 'terminal',
+    component: 'AssistantMessage',
+    props: { text: `Before.\n\n${WIDE}\n\nAfter.`, isFirstOfReply: true },
+    viewport: { columns: 80, rows: 40, isFullscreen: true },
+  })
+
+  // The text around the box is still the engine's to draw; no hint is needed.
+  expect(seen.join('\n')).toContain('Before.')
+  expect(seen.join('\n')).toContain('After.')
+  expect(seen.join('\n')).not.toContain('/diagram')
+
+  const box = await ui.find({ type: 'Client' })
+  expect(box).toBeDefined()
+  const at = { in: box!.key! }
+  await ui.resize({ columns: 40, rows: 12, ...at })
+  const status = async () => (await ui.find({ type: 'Text', text: /^drag to pan/, ...at }))?.text
+
+  expect(await status()).toMatch(/columns 1–40 of \d+/)
+  await ui.key({ key: 'right', ...at })
+  await ui.key({ key: 'right', ...at })
+  expect(await status()).toMatch(/columns 17–56 of/)
+
+  // Dragging the drawing 10 cells to the right shows 10 columns further left.
+  await ui.pointer({ type: 'down', x: 20, y: 3, button: 'left', ...at })
+  await ui.pointer({ type: 'move', x: 30, y: 3, button: 'left', ...at })
+  await ui.pointer({ type: 'up', x: 30, y: 3, button: 'left', ...at })
+  expect(await status()).toMatch(/columns 7–46 of/)
+
+  await ui.key({ key: 'end', ...at })
+  expect(await status()).toMatch(/columns (\d+)–(\d+) of \2$/)
+  await ui.key({ key: 'home', ...at })
+  expect(await status()).toMatch(/columns 1–40 of/)
+  // Panning never runs past the left edge.
+  await ui.key({ key: 'left', ...at })
+  expect(await status()).toMatch(/columns 1–40 of/)
+  await ui.unmount()
+})

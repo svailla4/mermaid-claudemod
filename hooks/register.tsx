@@ -42,29 +42,57 @@ function numberOf(source: string): number {
   return n
 }
 
-/** The reply's markdown with each diagram fence replaced by its drawing. */
-export function renderReply(text: string, width: number): string | undefined {
+/**
+ * A reply as drawn: runs of markdown (fitting diagrams already drawn in
+ * them), and the diagrams too wide to fit, which the caller shows in a scroll
+ * box where it can, else cut with a hint.
+ */
+export type Part = { kind: 'text'; text: string } | { kind: 'wide'; n: number; lines: string[]; width: number; art: string }
+
+/** The reply split into parts, or undefined when it holds no diagram. */
+export function planReply(text: string, width: number): Part[] | undefined {
   const segments = splitFences(text)
   if (!segments.some(s => s.kind === 'mermaid')) return undefined
 
-  return segments
-    .map(s => {
-      if (s.kind === 'md') return s.text
+  const parts: Part[] = []
+  const pushText = (t: string) => {
+    const last = parts[parts.length - 1]
+    if (last?.kind === 'text') last.text += '\n' + t
+    else parts.push({ kind: 'text', text: t })
+  }
 
-      const drawn = drawDiagram(s.source, width)
-      if (!drawn.ok) {
-        // Only a fence that said `mermaid` gets a note; an unlabeled one that
-        // merely looked like a diagram stays exactly as written.
-        return s.isLabeled ? `${s.raw}\n*mermaid: not drawn (${drawn.error})*` : s.raw
-      }
+  for (const s of segments) {
+    if (s.kind === 'md') {
+      pushText(s.text)
+      continue
+    }
 
-      const fence = '```\n' + drawn.art + '\n```'
-      if (!drawn.isCut) return fence
-
+    const drawn = drawDiagram(s.source, width)
+    if (!drawn.ok) {
+      // Only a fence that said `mermaid` gets a note; an unlabeled one that
+      // merely looked like a diagram stays exactly as written.
+      pushText(s.isLabeled ? `${s.raw}\n*mermaid: not drawn (${drawn.error})*` : s.raw)
+    } else if (!drawn.isCut) {
+      pushText('```\n' + drawn.art + '\n```')
+    } else {
       const n = numberOf(s.source)
       lastCut = n
-      return `${fence}\n*Cut to fit (${drawn.fullWidth} columns): \`/diagram ${n}\` opens it scrollable*`
-    })
+      parts.push({ kind: 'wide', n, lines: drawn.lines, width: drawn.fullWidth, art: drawn.art })
+    }
+  }
+
+  return parts
+}
+
+/** A wide diagram as text: cut to fit, with the command that scrolls it. */
+function cutWithHint(part: Extract<Part, { kind: 'wide' }>): string {
+  return '```\n' + part.art + `\n\`\`\`\n*Cut to fit (${part.width} columns): \`/diagram ${part.n}\` opens it scrollable*`
+}
+
+/** The reply's markdown with each diagram fence replaced by its drawing. */
+export function renderReply(text: string, width: number): string | undefined {
+  return planReply(text, width)
+    ?.map(p => (p.kind === 'text' ? p.text : cutWithHint(p)))
     .join('\n')
 }
 
@@ -84,14 +112,48 @@ export const register: Register = on => {
     return { sections: [...result.sections.filter(s => s.id !== STEERING.id), STEERING] }
   })
 
-  on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // The desktop and editor draw their own way; a summary row keeps its mark.
     if (e.surface !== 'terminal' || e.props.isSummary) return next(e)
 
     const width = Math.max(40, (e.viewport?.columns ?? DEFAULT_COLUMNS) - INDENT)
-    const text = renderReply(e.props.text, width)
+    const parts = planReply(e.props.text, width)
+    if (parts === undefined) return next(e)
 
-    return text === undefined ? next(e) : next({ ...e, props: { ...e.props, text } })
+    // Mouse and focus reach a scroll box only in the fullscreen layout; on the
+    // main screen a wide diagram is cut, with /diagram to scroll it.
+    if (!e.viewport?.isFullscreen || !parts.some(p => p.kind === 'wide')) {
+      const text = parts.map(p => (p.kind === 'text' ? p.text : cutWithHint(p))).join('\n')
+      return next({ ...e, props: { ...e.props, text } })
+    }
+
+    // The engine draws the text around each scroll box, as it draws any reply.
+    const { Box, Client } = $.ui.resolve(e)
+    const maxRows = Math.max(8, (e.viewport.rows ?? 40) - 12)
+    const children = []
+    let isFirst = e.props.isFirstOfReply
+
+    for (const part of parts) {
+      if (part.kind === 'text') {
+        if (part.text.trim() === '') continue
+        children.push(await next({ ...e, props: { ...e.props, text: part.text, isFirstOfReply: isFirst } }))
+        isFirst = false
+        continue
+      }
+      children.push(
+        <Box borderStyle="round" flexDirection="column" marginLeft={2} width={width}>
+          <Client
+            key={`diagram-${part.n}`}
+            module="./viewer.tsx"
+            props={{ lines: part.lines, width: part.width }}
+            width="100%"
+            height={Math.min(part.lines.length, maxRows) + 1}
+          />
+        </Box>,
+      )
+    }
+
+    return <Box flexDirection="column">{children}</Box>
   })
 
   on('command.run', { command: 'diagram' }, async ($, e) => {

@@ -20,13 +20,30 @@ const DEFAULT_COLUMNS = 100
 const draw = createDrawer(RENDERERS)
 const isDiagramHeader = (header: string) => isKnownHeader(RENDERERS, header)
 
-export const register: Register = on => {
-  on('prompt.compose', async ($, e, next) => {
-    const result = await next(e)
-    if (!e.surfaces.includes('terminal')) return result
+// The transcript's reply bullet is `⏺` on macOS and `●` elsewhere; the hooks
+// environment has no platform, so `uname` answers it once per load.
+let bullet = '●'
 
-    return { sections: withSteering(result.sections) }
+export const register: Register = (on, options) => {
+  on('session.start', async ($, e, next) => {
+    try {
+      const { stdout } = await $.process.run(['uname', '-s'], { timeoutMs: 2000 })
+      if (stdout.trim() === 'Darwin') bullet = '⏺'
+    } catch {
+      // No uname (Windows): keep the default.
+    }
+    return next(e)
   })
+
+  // On unless the person turned it off in the plugin's settings.
+  if (options.steer !== false) {
+    on('prompt.compose', async ($, e, next) => {
+      const result = await next(e)
+      if (!e.surfaces.includes('terminal')) return result
+
+      return { sections: withSteering(result.sections) }
+    })
+  }
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // The desktop and editor draw their own way; a summary row keeps its mark.
@@ -45,6 +62,7 @@ export const register: Register = on => {
         maxRows: Math.max(8, (e.viewport?.rows ?? 40) - 12),
         canScroll: e.viewport?.isFullscreen === true,
         isFirstOfReply: e.props.isFirstOfReply,
+        bullet,
       },
     )
   })

@@ -153,6 +153,17 @@ test('a session without a terminal gets no diagram section', async ($, on) => {
   expect(sections.map(s => s.id)).toEqual(['intro'])
 })
 
+test('with the steer setting off the system prompt is left alone', { options: { steer: false } }, async ($, on) => {
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'x', scope: 'shared' }] }))
+  const { sections } = await $.prompt.compose({ ...MODEL, surfaces: ['terminal'] })
+  expect(sections.map(s => s.id)).toEqual(['intro'])
+})
+
+test('with the steer setting off diagrams are still drawn', { options: { steer: false } }, async ($, on) => {
+  const { art } = await draw($, on, FLOW)
+  expect(art).toMatch(BOX)
+})
+
 const ER_FENCE = [
   '```mermaid',
   'erDiagram',
@@ -319,14 +330,18 @@ function findText(n: unknown, text: string): Node | undefined {
   return undefined
 }
 
+// The transcript's bullet: `⏺` on macOS, `●` elsewhere (and before the
+// platform is known).
+const bulletOf = (tree: unknown) => findText(tree, '⏺') ?? findText(tree, '●')
+
 test('a reply that opens with a diagram still shows its bullet', async ($, on) => {
   const { tree } = await draw($, on, FLOW)
-  expect(findText(tree, '⏺')?.props).toEqual({ color: 'text' })
+  expect(bulletOf(tree)?.props).toEqual({ color: 'text' })
 })
 
 test('a diagram after text gets no bullet of its own', async ($, on) => {
   const { tree } = await draw($, on, `Here:\n\n${FLOW}`)
-  expect(findText(tree, '⏺')).toBeUndefined()
+  expect(bulletOf(tree)).toBeUndefined()
 })
 
 // The bounds a surface keeps a tree within: nodes, depth and serialized size.

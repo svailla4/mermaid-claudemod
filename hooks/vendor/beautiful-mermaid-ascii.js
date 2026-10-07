@@ -1,12 +1,12 @@
-// beautiful-mermaid 1.1.3 (MIT, lukilabs): the ASCII renderer, the flowchart/state parser and the ER parser only. Bundled with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
+// beautiful-mermaid 1.1.3 (MIT, Craft Docs, github.com/lukilabs/beautiful-mermaid): the ASCII renderer, the flowchart/state parser and the ER parser only. Built by scripts/build-vendor.sh with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/multiline-utils.ts
+// .vendor-build/beautiful-mermaid/src/multiline-utils.ts
 function normalizeBrTags(label) {
   const unquoted = label.startsWith('"') && label.endsWith('"') ? label.slice(1, -1) : label;
   return unquoted.replace(/<br\s*\/?>/gi, "\n").replace(/\\n/g, "\n").replace(/<\/?(?:sub|sup|small|mark)\s*>/gi, "").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g, "<i>$1</i>").replace(/~~(.+?)~~/g, "<s>$1</s>");
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/parser.ts
+// .vendor-build/beautiful-mermaid/src/parser.ts
 function parseMermaid(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith("%%"));
   if (lines.length === 0) {
@@ -424,7 +424,7 @@ function textArrowStyleFromOps(openOp, closeOp) {
   return "solid";
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/types.ts
+// .vendor-build/beautiful-mermaid/src/ascii/types.ts
 var Up = { x: 1, y: 0 };
 var Down = { x: 1, y: 2 };
 var Left = { x: 0, y: 1 };
@@ -448,7 +448,7 @@ function gridKey(c) {
 }
 var EMPTY_STYLE = { name: "", styles: {} };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/ansi.ts
+// .vendor-build/beautiful-mermaid/src/ascii/ansi.ts
 var DEFAULT_ASCII_THEME = {
   fg: "#27272a",
   // zinc-800 — primary text
@@ -684,7 +684,7 @@ function colorizeText(text, hex, mode) {
   return `${code}${text}${RESET}`;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/canvas.ts
+// .vendor-build/beautiful-mermaid/src/ascii/canvas.ts
 function mkCanvas(x, y) {
   const canvas = [];
   for (let i = 0; i <= x; i++) {
@@ -917,7 +917,7 @@ function setRoleCanvasSizeToGrid(roleCanvas, columnWidth, rowHeight) {
   increaseRoleCanvasSize(roleCanvas, maxX - 1, maxY - 1);
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/converter.ts
+// .vendor-build/beautiful-mermaid/src/ascii/converter.ts
 function convertToAsciiGraph(parsed, config) {
   const nodeMap = /* @__PURE__ */ new Map();
   let index = 0;
@@ -1078,7 +1078,7 @@ function buildSgMap(mSgs, aSgs, result) {
   }
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/pathfinder.ts
+// .vendor-build/beautiful-mermaid/src/ascii/pathfinder.ts
 var MinHeap = class {
   items = [];
   get length() {
@@ -1207,7 +1207,7 @@ function mergePath(path) {
   return path.filter((_, i) => !toRemove.has(i));
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/edge-routing.ts
+// .vendor-build/beautiful-mermaid/src/ascii/edge-routing.ts
 function getOpposite(d) {
   if (d === Up) return Down;
   if (d === Down) return Up;
@@ -1405,7 +1405,7 @@ function calculateLineWidth(graph, line) {
   return total;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/edge-bundling.ts
+// .vendor-build/beautiful-mermaid/src/ascii/edge-bundling.ts
 function analyzeEdgeBundles(graph) {
   if (graph.config.graphDirection !== "TD") {
     return [];
@@ -1562,7 +1562,7 @@ function processBundles(graph) {
   }
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/multiline-utils.ts
+// .vendor-build/beautiful-mermaid/src/ascii/multiline-utils.ts
 function splitLines(label) {
   return label.split("\n");
 }
@@ -1574,7 +1574,7 @@ function lineCount(label) {
   return splitLines(label).length;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/corners.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/corners.ts
 var SHAPE_CORNERS = {
   // Standard rectangular shapes
   rectangle: {
@@ -1649,7 +1649,7 @@ function getCorners(shape, useAscii) {
   return useAscii ? corners.ascii : corners.unicode;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/rectangle.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/rectangle.ts
 function getBoxDimensions(label, options) {
   const lines = splitLines(label);
   const maxLineWidth2 = Math.max(...lines.map((l) => l.length), 0);
@@ -1733,7 +1733,7 @@ var rectangleRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/diamond.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/diamond.ts
 var diamondRenderer = {
   getDimensions: getBoxDimensions,
   render(label, dimensions, options) {
@@ -1743,7 +1743,7 @@ var diamondRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/circle.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/circle.ts
 var circleRenderer = {
   getDimensions: getBoxDimensions,
   render(label, dimensions, options) {
@@ -1753,7 +1753,7 @@ var circleRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/state.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/state.ts
 var stateStartRenderer = {
   getDimensions(_label, _options) {
     const width = 5;
@@ -1871,7 +1871,7 @@ var stateEndRenderer = {
   }
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/rounded.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/rounded.ts
 var roundedRenderer = {
   getDimensions: getBoxDimensions,
   render(label, dimensions, options) {
@@ -1881,7 +1881,7 @@ var roundedRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/stadium.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/stadium.ts
 var stadiumRenderer = {
   getDimensions(label, options) {
     const lines = splitLines(label);
@@ -1951,7 +1951,7 @@ var stadiumRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/hexagon.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/hexagon.ts
 var hexagonRenderer = {
   getDimensions: getBoxDimensions,
   render(label, dimensions, options) {
@@ -1961,7 +1961,7 @@ var hexagonRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/special.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/special.ts
 var subroutineRenderer = {
   getDimensions(label, options) {
     const lines = splitLines(label);
@@ -2117,7 +2117,7 @@ var trapezoidAltRenderer = {
   getAttachmentPoint: getBoxAttachmentPoint
 };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/shapes/index.ts
+// .vendor-build/beautiful-mermaid/src/ascii/shapes/index.ts
 var shapeRegistry = /* @__PURE__ */ new Map([
   // Core shapes
   ["rectangle", rectangleRenderer],
@@ -2150,7 +2150,7 @@ function getShapeAttachmentPoint(shape, dir, dimensions, baseCoord) {
   return renderer.getAttachmentPoint(dir, dimensions, baseCoord);
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/draw.ts
+// .vendor-build/beautiful-mermaid/src/ascii/draw.ts
 function drawNode(node, graph) {
   return drawBoxWithGridDimensions(node, graph);
 }
@@ -2967,7 +2967,7 @@ function drawGraph(graph) {
   return graph.canvas;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/grid.ts
+// .vendor-build/beautiful-mermaid/src/ascii/grid.ts
 function gridToDrawingCoord(graph, c, dir) {
   const target = dir ? { x: c.x + dir.x, y: c.y + dir.y } : c;
   let x = 0;
@@ -3316,7 +3316,7 @@ function getChildren(graph, node) {
   return getEdgesFromNode(graph, node).map((e) => e.to);
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/sequence/parser.ts
+// .vendor-build/beautiful-mermaid/src/sequence/parser.ts
 function parseSequenceDiagram(lines) {
   const diagram = {
     actors: [],
@@ -3448,7 +3448,7 @@ function ensureActor(diagram, actorIds, id) {
   }
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/sequence.ts
+// .vendor-build/beautiful-mermaid/src/ascii/sequence.ts
 function renderSequenceAscii(text, config, colorMode, theme) {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0 && !l.startsWith("%%"));
   const diagram = parseSequenceDiagram(lines);
@@ -3755,7 +3755,7 @@ function renderSequenceAscii(text, config, colorMode, theme) {
   }
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/class/parser.ts
+// .vendor-build/beautiful-mermaid/src/class/parser.ts
 function parseClassDiagram(lines) {
   const diagram = {
     classes: [],
@@ -3974,7 +3974,7 @@ function parseArrow(arrow) {
   }
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/class-diagram.ts
+// .vendor-build/beautiful-mermaid/src/ascii/class-diagram.ts
 function classifyBoxChar(ch) {
   if (/^[┌┐└┘├┤┬┴┼│─╭╮╰╯+\-|]$/.test(ch)) return "border";
   return "text";
@@ -4431,7 +4431,7 @@ function renderClassAscii(text, config, colorMode, theme) {
   return canvasToString(canvas, { roleCanvas: rc, colorMode, theme });
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/er/parser.ts
+// .vendor-build/beautiful-mermaid/src/er/parser.ts
 function parseErDiagram(lines) {
   const diagram = {
     entities: [],
@@ -4527,7 +4527,7 @@ function parseCardinality(str) {
   return null;
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/er-diagram.ts
+// .vendor-build/beautiful-mermaid/src/ascii/er-diagram.ts
 function classifyBoxChar2(ch) {
   if (/^[┌┐└┘├┤┬┴┼│─╭╮╰╯+\-|]$/.test(ch)) return "border";
   return "text";
@@ -4798,7 +4798,7 @@ function renderErAscii(text, config, colorMode, theme) {
   return canvasToString(canvas, { roleCanvas: rc, colorMode, theme });
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/xychart/parser.ts
+// .vendor-build/beautiful-mermaid/src/xychart/parser.ts
 function parseXYChart(lines) {
   const xAxis = {};
   const yAxis = {};
@@ -4868,7 +4868,7 @@ function parseNumericArray(str) {
   return str.split(",").map((s) => parseFloat(s.trim()));
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/xychart/colors.ts
+// .vendor-build/beautiful-mermaid/src/xychart/colors.ts
 var CHART_ACCENT_FALLBACK = "#3b82f6";
 function hexToHsl(hex) {
   const h = hex.replace("#", "");
@@ -4943,7 +4943,7 @@ function getSeriesColor(index, accentColor, bgColor) {
   return hslToHex(newH, chartS, l);
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/xychart.ts
+// .vendor-build/beautiful-mermaid/src/ascii/xychart.ts
 var PLOT_WIDTH = 60;
 var PLOT_HEIGHT = 20;
 var UNI = {
@@ -5503,7 +5503,7 @@ function formatTickValue(v) {
   return v.toFixed(Math.abs(v) < 10 ? 1 : 0);
 }
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/index.ts
+// .vendor-build/beautiful-mermaid/src/ascii/index.ts
 function detectDiagramType(text) {
   const firstLine = text.trim().split("\n")[0]?.trim().toLowerCase() ?? "";
   if (/^xychart(-beta)?\b/.test(firstLine)) return "xychart";

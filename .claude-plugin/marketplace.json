@@ -1,6 +1,6 @@
 {
   "name": "mermaid-render",
-  "description": "Personal Claude Code mods: Mermaid diagrams drawn in the terminal.",
+  "description": "Mermaid diagrams drawn in Claude Code's terminal as colored box art.",
   "owner": {
     "name": "Stephane Vaillancourt"
   },

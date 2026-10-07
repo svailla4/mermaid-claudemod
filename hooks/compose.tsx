@@ -19,14 +19,14 @@ export type Layout = {
   /** Whether mouse and keys reach a scroll box (the fullscreen layout only). */
   canScroll: boolean
   isFirstOfReply: boolean
+  /** The transcript's reply bullet, drawn for a reply that opens with a diagram. */
+  bullet: string
 }
 
 type Terminal = Pick<Elements['terminal'], 'Box' | 'Client' | 'Text'>
 
 // Cells left of a reply's text: the bullet and its gap.
 const INSET = 2
-// The reply's bullet, as the transcript draws it, for a reply that opens with a diagram.
-const BULLET = '⏺'
 // A scroll box's props cross to its drawing thread as JSON, at most 100,000 characters.
 const MAX_PROPS = 95_000
 
@@ -93,7 +93,7 @@ export async function composeReply(
     children.push(
       <Box flexDirection="row" {...margins}>
         <Box minWidth={INSET} flexShrink={0}>
-          {isFirst ? <Text color="text">{BULLET}</Text> : ' '}
+          {isFirst ? <Text color="text">{layout.bullet}</Text> : ' '}
         </Box>
         {drawing}
       </Box>,

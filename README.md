@@ -73,6 +73,8 @@ Other kinds (`gantt`, `pie`, `timeline`, `mindmap` and so on) stay as source, wi
 |---|---|---|
 | `steer` | `true` | Adds the system-prompt section that asks Claude to write diagrams as Mermaid. |
 
+The installer may say this option is "not yet set"; until you set it, the default applies.
+
 Change it with `/plugin configure mermaid-render` in Claude Code, or from a shell:
 
 ```bash

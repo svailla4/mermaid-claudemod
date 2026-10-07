@@ -1,5 +1,10 @@
-import type { RenderSurface } from 'claude-code'
+import type { On, RenderSurface } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+
+import { paintFor } from './paint.ts'
+import { ROLE } from './styled.ts'
+import type { StyledLine } from './styled.ts'
 
 const FLOW = '```mermaid\nflowchart TD\n  A[Customer] --> B[Input app]\n  B --> C[(Postgres)]\n```'
 const ERD = '```\nerDiagram\n  ORGANIZATION ||--o{ VALUATION : values\n```'
@@ -12,19 +17,47 @@ const MODEL = {
   traits: [],
 }
 
-type Drawn = { text: string | undefined; seen: string | undefined }
+type Node = { type: string; props?: Record<string, unknown>; children?: unknown[] }
+
+const isNode = (c: unknown): c is Node => typeof c === 'object' && c !== null && 'type' in c
+const textOf = (n: unknown): string => (typeof n === 'string' ? n : isNode(n) ? (n.children ?? []).map(textOf).join('') : '')
+
+/** Every Text drawing one row of a drawing, outermost, in order. */
+function rowsOf(tree: unknown): Node[] {
+  if (!isNode(tree)) return []
+  if (tree.type === 'Text' && tree.props?.wrap === 'truncate-end') return [tree]
+  return (tree.children ?? []).flatMap(rowsOf)
+}
+
+/** The styled runs of the rows: each Text nested in a row, with its look. */
+const runsOf = (tree: unknown) =>
+  rowsOf(tree).flatMap(row =>
+    (row.children ?? []).filter(isNode).map(run => ({ text: textOf(run), look: run.props ?? {} })),
+  )
+
+/** The look of the first run whose text is `text`, else the first holding it. */
+function lookOf(tree: unknown, text: string) {
+  const runs = runsOf(tree)
+  return (runs.find(r => r.text.trim() === text) ?? runs.find(r => r.text.includes(text)))?.look
+}
+
+/** The text of every row a drawing's tree holds, as lines. */
+const artOf = (tree: unknown) => rowsOf(tree).map(textOf).join('\n')
+
+type Viewport = { columns: number; rows: number; isFullscreen?: boolean }
 
 // Mounts a reply through the mod, with a stand-in for the engine beneath it
-// that records the text it was asked to draw.
-async function draw(
-  $: Parameters<Parameters<typeof test>[1]>[0],
-  on: Parameters<Parameters<typeof test>[1]>[1],
+// that records each run of text it was asked to draw.
+async function mount<S extends RenderSurface = 'terminal'>(
+  $: Engine,
+  on: On,
   text: string,
-  surface: RenderSurface = 'terminal',
-): Promise<Drawn> {
-  let seen: string | undefined
+  viewport: Viewport,
+  surface: S = 'terminal' as S,
+) {
+  const seen: string[] = []
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
-    seen = e.props.text
+    seen.push(e.props.text)
     const { Markdown } = $.ui.resolve(e)
     return Markdown({ text: e.props.text })
   })
@@ -33,28 +66,33 @@ async function draw(
     surface,
     component: 'AssistantMessage',
     props: { text, isFirstOfReply: true },
-    viewport: { columns: 120, rows: 40 },
+    viewport,
   })
-  const found = await ui.find({ type: 'Markdown' })
+  return { ui, seen, tree: await ui.drawn() }
+}
+
+/** A reply drawn at 120 columns: what the engine was asked to draw, and the drawing. */
+async function draw($: Engine, on: On, text: string, surface: RenderSurface = 'terminal') {
+  const { ui, seen, tree } = await mount($, on, text, { columns: 120, rows: 40 }, surface)
   await ui.unmount()
-  return { text: found?.text, seen }
+  return { seen: seen.join('\n'), art: artOf(tree), tree }
 }
 
 const BOX = /[┌└│─►▼]/
 
-test('a mermaid fence is drawn as box art', async ($, on) => {
-  const { seen } = await draw($, on, `Here is the flow:\n\n${FLOW}\n\nDone.`)
-  expect(seen).toMatch(BOX)
+test('a mermaid fence is drawn as box art between the text the engine draws', async ($, on) => {
+  const { seen, art } = await draw($, on, `Here is the flow:\n\n${FLOW}\n\nDone.`)
+  expect(art).toMatch(BOX)
+  expect(art).toContain('Customer')
   expect(seen).not.toContain('```mermaid')
-  expect(seen).toContain('Customer')
   expect(seen).toContain('Here is the flow:')
   expect(seen).toContain('Done.')
 })
 
 test('an unlabeled fence starting with erDiagram is drawn', async ($, on) => {
-  const { seen } = await draw($, on, ERD)
-  expect(seen).toMatch(BOX)
-  expect(seen).toContain('ORGANIZATION')
+  const { art, seen } = await draw($, on, ERD)
+  expect(art).toMatch(/[╭│─]/)
+  expect(art).toContain('ORGANIZATION')
   expect(seen).not.toContain('erDiagram')
 })
 
@@ -86,9 +124,9 @@ test('an unsupported mermaid kind keeps its source and says why', async ($, on) 
 test('a left-right flowchart too wide for the terminal is turned top-down to fit', async ($, on) => {
   const long = 'x'.repeat(60)
   const fence = `\`\`\`mermaid\nflowchart LR\n  A[${long}] --> B[${long}] --> C[${long}]\n\`\`\``
-  const { seen } = await draw($, on, fence)
-  const art = seen!.split('\n').filter(l => !l.startsWith('```'))
-  for (const line of art) expect(Array.from(line).length).toBeLessThanOrEqual(116)
+  const { art } = await draw($, on, fence)
+  expect(art).toContain(long)
+  for (const line of art.split('\n')) expect(Array.from(line).length).toBeLessThanOrEqual(116)
 })
 
 test('the desktop surface draws the source as written', async ($, on) => {
@@ -115,28 +153,59 @@ test('a session without a terminal gets no diagram section', async ($, on) => {
   expect(sections.map(s => s.id)).toEqual(['intro'])
 })
 
+const ER_FENCE = [
+  '```mermaid',
+  'erDiagram',
+  '  CUSTOMER ||--o{ ORDER : places',
+  '  ORDER ||..o| PAYMENT : "paid by"',
+  '  CUSTOMER {',
+  '    int id PK',
+  '    string email UK',
+  '  }',
+  '  ORDER {',
+  '    int customer_id FK',
+  '  }',
+  '```',
+].join('\n')
+
 test('an ER diagram lists entities in boxes and relationships as a table', async ($, on) => {
-  const fence = [
-    '```mermaid',
-    'erDiagram',
-    '  CUSTOMER ||--o{ ORDER : places',
-    '  ORDER ||..o| PAYMENT : "paid by"',
-    '  CUSTOMER {',
-    '    int id PK',
-    '    string email UK',
-    '  }',
-    '```',
-  ].join('\n')
-  const { seen } = await draw($, on, fence)
-  expect(seen).toContain('│ PK int    id    │')
-  expect(seen).toContain('Relationships')
-  expect(seen).toMatch(/CUSTOMER 1 ──── 0\.\.n ORDER +places/)
+  const { art } = await draw($, on, ER_FENCE)
+  // Key badge, name, then type, in aligned columns.
+  expect(art).toContain('│ PK id    int    │')
+  expect(art).toContain('│ UK email string │')
+  expect(art).toContain('Relationships')
+  expect(art).toMatch(/CUSTOMER 1 ──── 0\.\.n ORDER +places/)
   // Non-identifying (`..`) relationships are dashed.
-  expect(seen).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
+  expect(art).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
   // No relationship line runs through an entity box.
-  for (const line of seen!.split('\n').filter(l => l.startsWith('│'))) {
+  for (const line of art.split('\n').filter(l => l.startsWith('│'))) {
     expect(line).not.toMatch(/[○╟╢]/)
   }
+})
+
+test('an ER diagram colors entity names, key badges, types and verbs', async ($, on) => {
+  const { tree } = await draw($, on, ER_FENCE)
+  expect(lookOf(tree, 'CUSTOMER')).toEqual({ color: 'claude', bold: true })
+  expect(lookOf(tree, 'PK')).toEqual({ color: 'warning', bold: true })
+  expect(lookOf(tree, 'FK')).toEqual({ color: 'suggestion', bold: true })
+  expect(lookOf(tree, 'UK')).toEqual({ color: 'merged', bold: true })
+  expect(lookOf(tree, 'string')).toEqual({ color: 'inactive' })
+  expect(lookOf(tree, '────')).toEqual({ color: 'suggestion' })
+  expect(lookOf(tree, 'places')).toEqual({ dimColor: true, italic: true })
+  expect(lookOf(tree, '╭')).toEqual({ color: 'inactive' })
+})
+
+test('a flowchart draws frames, labels, edges, arrowheads and edge labels each their own way', async ($, on) => {
+  const fence = '```mermaid\nflowchart TD\n  A[Customer] -->|asks| B[Input app]\n```'
+  const { tree, art } = await draw($, on, fence)
+  expect(lookOf(tree, '┌')).toEqual({ color: 'inactive' })
+  expect(lookOf(tree, '▼')).toEqual({ color: 'suggestion', bold: true })
+  expect(lookOf(tree, 'asks')).toEqual({ dimColor: true, italic: true })
+  // Labels take the text's own color: bare strings in their row, no run of their own.
+  expect(art).toContain('Customer')
+  expect(runsOf(tree).some(r => r.text.includes('Customer'))).toBe(false)
+  // The edge between the boxes is drawn in the accent, apart from its arrowhead.
+  expect(runsOf(tree).some(r => r.text.trim() === '│' && r.look.color === 'suggestion' && !r.look.bold)).toBe(true)
 })
 
 test('a state diagram draws Start and End and lists self-transitions', async ($, on) => {
@@ -149,11 +218,21 @@ test('a state diagram draws Start and End and lists self-transitions', async ($,
     '  Done --> [*]',
     '```',
   ].join('\n')
-  const { seen } = await draw($, on, fence)
-  expect(seen).toMatch(/│ +Start +│/)
-  expect(seen).toMatch(/│ +End +│/)
-  expect(seen).toContain('↻ Draft: save')
-  expect(seen).not.toContain('[*]')
+  const { art, tree } = await draw($, on, fence)
+  expect(art).toMatch(/│ +Start +│/)
+  expect(art).toMatch(/│ +End +│/)
+  expect(art).toContain('↻ Draft: save')
+  expect(art).not.toContain('[*]')
+  expect(lookOf(tree, ': save')).toEqual({ dimColor: true, italic: true })
+})
+
+test('edges between boxes are one stroke long and boxes hold no blank rows', async ($, on) => {
+  const { art } = await draw($, on, FLOW)
+  const lines = art.split('\n')
+  const bottom = lines.findIndex(l => l.includes('┬'))
+  expect(lines[bottom + 1]!.trim()).toBe('│')
+  expect(lines[bottom + 2]!.trim()).toBe('▼')
+  for (const line of lines) expect(line).not.toMatch(/^│ +│$/)
 })
 
 test('a sequence diagram with long messages wraps them to fit', async ($, on) => {
@@ -169,11 +248,73 @@ test('a sequence diagram with long messages wraps them to fit', async ($, on) =>
     `  C-->>A: ${message}`,
     '```',
   ].join('\n')
-  const { seen } = await draw($, on, fence)
-  const art = seen!.split('\n').filter(l => !l.startsWith('```'))
-  for (const line of art) expect(line.endsWith('…')).toBe(false)
-  expect(seen).toContain('uploaded document and prepare')
-  expect(seen).toContain('every input')
+  const { art, tree } = await draw($, on, fence)
+  for (const line of art.split('\n')) expect(line.endsWith('…')).toBe(false)
+  expect(art).toContain('uploaded document and prepare')
+  expect(art).toContain('every input')
+  // Lifelines step back behind the messages, which leave them at a junction.
+  const strokes = runsOf(tree).filter(r => r.text.trim() === '│')
+  expect(strokes.some(r => r.look.color === 'subtle')).toBe(true)
+  expect(art).toContain('├')
+})
+
+/** The first Text in the tree that shows exactly `text`. */
+function findText(n: unknown, text: string): Node | undefined {
+  if (!isNode(n)) return undefined
+  if (n.type === 'Text' && textOf(n) === text) return n
+  for (const c of n.children ?? []) {
+    const hit = findText(c, text)
+    if (hit) return hit
+  }
+  return undefined
+}
+
+test('a reply that opens with a diagram still shows its bullet', async ($, on) => {
+  const { tree } = await draw($, on, FLOW)
+  expect(findText(tree, '⏺')?.props).toEqual({ color: 'text' })
+})
+
+test('a diagram after text gets no bullet of its own', async ($, on) => {
+  const { tree } = await draw($, on, `Here:\n\n${FLOW}`)
+  expect(findText(tree, '⏺')).toBeUndefined()
+})
+
+// The bounds a surface keeps a tree within: nodes, depth and serialized size.
+function measure(tree: unknown) {
+  let nodes = 0
+  const depth = (n: unknown): number => {
+    if (!isNode(n)) return 0
+    nodes++
+    return 1 + Math.max(0, ...(n.children ?? []).map(depth))
+  }
+  return { depth: depth(tree), nodes, chars: JSON.stringify(tree).length }
+}
+
+test('a big diagram stays within the bounds of a tree', async ($, on) => {
+  // Forty entities of ten keyed attributes: thousands of colored runs.
+  const entities = Array.from({ length: 40 }, (_, i) => [
+    `  E${i} ||--o{ E${i + 1} : has`,
+    `  E${i} {`,
+    ...Array.from({ length: 10 }, (_, j) => `    uuid field_${j} ${j % 2 ? 'FK' : 'PK'}`),
+    '  }',
+  ])
+  const fence = ['```mermaid', 'erDiagram', ...entities.flat(), '```'].join('\n')
+  const { tree, art } = await draw($, on, fence)
+  expect(art).toContain('E39')
+  const size = measure(tree)
+  expect(size.nodes).toBeLessThan(20_000)
+  expect(size.depth).toBeLessThan(32)
+  expect(size.chars).toBeLessThan(100_000)
+})
+
+test('lines too many to color are drawn plain, and too many for a tree are left to the engine', () => {
+  const line = (n: number): StyledLine => ({
+    text: '│ x │ '.repeat(n),
+    roles: `${ROLE.border} ${ROLE.edge} ${ROLE.border} `.repeat(n),
+  })
+  expect(paintFor(Array.from({ length: 50 }, () => line(4)))).toBe('color')
+  expect(paintFor(Array.from({ length: 400 }, () => line(10)))).toBe('plain')
+  expect(paintFor(Array.from({ length: 5_000 }, () => line(10)))).toBe('none')
 })
 
 const WIDE = [
@@ -185,88 +326,75 @@ const WIDE = [
   '```',
 ].join('\n')
 
-// Mounts a reply and returns the scroll box drawn for it, if any, with what
-// the engine was asked to draw around it.
-async function boxed(
-  $: Parameters<Parameters<typeof test>[1]>[0],
-  on: Parameters<Parameters<typeof test>[1]>[1],
-  text: string,
-  isFullscreen: boolean,
-) {
-  const seen: string[] = []
-  on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
-    seen.push(e.props.text)
-    const { Markdown } = $.ui.resolve(e)
-    return Markdown({ text: e.props.text })
-  })
-  const ui = await $.ui.mount({
-    plugin: 'mermaid-render',
-    surface: 'terminal',
-    component: 'AssistantMessage',
-    props: { text, isFirstOfReply: true },
-    viewport: { columns: 80, rows: 40, isFullscreen },
-  })
-  return { ui, seen, box: await ui.find({ type: 'Client' }) }
+// Mounts a reply at 80 columns and returns the scroll box drawn for it, if
+// any, with what the engine was asked to draw around it.
+async function boxed($: Engine, on: On, text: string, isFullscreen: boolean) {
+  const { ui, seen, tree } = await mount($, on, text, { columns: 80, rows: 40, isFullscreen })
+  return { ui, seen, tree, box: await ui.find({ type: 'Client' }) }
 }
 
-test('on the main screen a wide diagram is still boxed in the reply, and says it cannot scroll', async ($, on) => {
+test('on the main screen a wide diagram is still boxed in the reply, and says where it scrolls', async ($, on) => {
   const { ui, box } = await boxed($, on, WIDE, false)
   expect(box).toBeDefined()
-  await ui.resize({ columns: 40, rows: 12, in: box!.key! })
-  const status = await ui.find({ type: 'Text', text: /columns 1–40 of/, in: box!.key! })
-  expect(status?.text).toContain('scrolling needs the fullscreen layout')
+  await ui.resize({ columns: 60, rows: 12, in: box!.key! })
+  const status = await ui.find({ type: 'Text', text: /◀ 1–58\/\d+ ▶/, in: box!.key! })
+  expect(status?.text).toContain('fullscreen to scroll')
   await ui.unmount()
 })
 
 test('a diagram that fits is drawn in the reply without a box', async ($, on) => {
-  const { ui, seen, box } = await boxed($, on, FLOW, true)
+  const { ui, tree, box } = await boxed($, on, FLOW, true)
   expect(box).toBeUndefined()
-  expect(seen.join('\n')).toMatch(BOX)
+  expect(artOf(tree)).toMatch(BOX)
+  await ui.unmount()
+})
+
+test('a scroll box frames the drawing with its kind on top and its position below', async ($, on) => {
+  const { ui, box } = await boxed($, on, WIDE, true)
+  const at = { in: box!.key! }
+  await ui.resize({ columns: 40, rows: 12, ...at })
+  const view = await ui.drawn(at)
+  const rows = rowsOf(view).map(textOf)
+  expect(rows[0]).toMatch(/^╭─ flowchart ─+╮$/)
+  expect(rows[rows.length - 1]).toMatch(/^╰─ ◀ 1–38\/\d+ ▶ · drag or ←→ ─*╯$/)
+  // Every row is as wide as the box, framed on both sides.
+  for (const row of rows) expect(Array.from(row).length).toBe(40)
+  for (const row of rows.slice(1, -1)) expect(row).toMatch(/^│.*│$/)
+  // The frame steps back; the drawing inside keeps its colors.
+  expect(lookOf(view, '╭─')).toEqual({ color: 'subtle' })
+  expect(runsOf(view).some(r => r.look.color === 'inactive' && r.text.includes('┌'))).toBe(true)
   await ui.unmount()
 })
 
 test('in fullscreen a wide diagram scrolls inside its own box in the reply', async ($, on) => {
-  const seen: string[] = []
-  on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
-    seen.push(e.props.text)
-    const { Markdown } = $.ui.resolve(e)
-    return Markdown({ text: e.props.text })
-  })
-  const ui = await $.ui.mount({
-    plugin: 'mermaid-render',
-    surface: 'terminal',
-    component: 'AssistantMessage',
-    props: { text: `Before.\n\n${WIDE}\n\nAfter.`, isFirstOfReply: true },
-    viewport: { columns: 80, rows: 40, isFullscreen: true },
-  })
+  const { ui, seen, box } = await boxed($, on, `Before.\n\n${WIDE}\n\nAfter.`, true)
 
   // The text around the box is still the engine's to draw; no hint is needed.
   expect(seen.join('\n')).toContain('Before.')
   expect(seen.join('\n')).toContain('After.')
 
-  const box = await ui.find({ type: 'Client' })
   expect(box).toBeDefined()
   const at = { in: box!.key! }
   await ui.resize({ columns: 40, rows: 12, ...at })
-  const status = async () => (await ui.find({ type: 'Text', text: /^drag to pan/, ...at }))?.text
+  const status = async () => (await ui.find({ type: 'Text', text: /^╰─ ◀/, ...at }))?.text
 
-  expect(await status()).toMatch(/columns 1–40 of \d+/)
+  expect(await status()).toMatch(/◀ 1–38\/\d+ ▶/)
   await ui.key({ key: 'right', ...at })
   await ui.key({ key: 'right', ...at })
-  expect(await status()).toMatch(/columns 17–56 of/)
+  expect(await status()).toMatch(/◀ 17–54\//)
 
   // Dragging the drawing 10 cells to the right shows 10 columns further left.
   await ui.pointer({ type: 'down', x: 20, y: 3, button: 'left', ...at })
   await ui.pointer({ type: 'move', x: 30, y: 3, button: 'left', ...at })
   await ui.pointer({ type: 'up', x: 30, y: 3, button: 'left', ...at })
-  expect(await status()).toMatch(/columns 7–46 of/)
+  expect(await status()).toMatch(/◀ 7–44\//)
 
   await ui.key({ key: 'end', ...at })
-  expect(await status()).toMatch(/columns (\d+)–(\d+) of \2$/)
+  expect(await status()).toMatch(/◀ (\d+)–(\d+)\/\2 ▶/)
   await ui.key({ key: 'home', ...at })
-  expect(await status()).toMatch(/columns 1–40 of/)
+  expect(await status()).toMatch(/◀ 1–38\//)
   // Panning never runs past the left edge.
   await ui.key({ key: 'left', ...at })
-  expect(await status()).toMatch(/columns 1–40 of/)
+  expect(await status()).toMatch(/◀ 1–38\//)
   await ui.unmount()
 })

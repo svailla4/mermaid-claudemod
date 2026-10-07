@@ -3,10 +3,14 @@
 
 import { diagramBody, headerOf, rendererFor } from './diagram.ts'
 import type { Renderers } from './diagram.ts'
-import { widest } from './lines.ts'
+import { widestLine } from './styled.ts'
+import type { StyledLine } from './styled.ts'
 
-/** A drawing's lines, uncut, and the width of the widest; or why it failed. */
-export type Drawn = { ok: true; lines: string[]; width: number } | { ok: false; error: string }
+/**
+ * A drawing's lines, uncut, the width of the widest and the kind that drew
+ * it; or why it failed.
+ */
+export type Drawn = { ok: true; lines: StyledLine[]; width: number; kind: string } | { ok: false; error: string }
 
 /** Draws a fence's source, aiming to fit `width` columns. */
 export type Draw = (source: string, width: number) => Drawn
@@ -28,8 +32,9 @@ export function createDrawer(renderers: Renderers): Draw {
     let drawn: Drawn
     try {
       const body = diagramBody(source)
-      const lines = rendererFor(renderers, headerOf(body)).draw(body, width)
-      drawn = { ok: true, lines, width: widest(lines) }
+      const renderer = rendererFor(renderers, headerOf(body))
+      const lines = renderer.draw(body, width)
+      drawn = { ok: true, lines, width: widestLine(lines), kind: renderer.kind }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       drawn = { ok: false, error: message.split('\n')[0]!.slice(0, 160) }

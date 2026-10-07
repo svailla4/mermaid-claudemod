@@ -5,6 +5,7 @@ import type { DiagramRenderer, Renderers } from './diagram.ts'
 import { createDrawer } from './draw.ts'
 import { splitFences } from './fences.ts'
 import { RENDERERS } from './registry.ts'
+import { plain } from './styled.ts'
 
 // A header of each kind, and the renderer kind it must reach.
 const ROUTES: Array<[string, string]> = [
@@ -45,14 +46,14 @@ test('any other header goes to the fallback and is not taken for a known kind', 
 const gantt: DiagramRenderer = {
   kind: 'gantt',
   matches: header => header === 'gantt',
-  draw: (body, width) => [`gantt of ${body.split('\n').length} lines at ${width}`],
+  draw: (body, width) => [plain(`gantt of ${body.split('\n').length} lines at ${width}`)],
 }
 const WITH_GANTT: Renderers = { ...RENDERERS, kinds: [...RENDERERS.kinds, gantt] }
 
 test('a new kind is drawn and found in unlabeled fences once it is registered', () => {
   const draw = createDrawer(WITH_GANTT)
   const drawn = draw('%% plan\ngantt\n  title Plan', 80)
-  expect(drawn).toEqual({ ok: true, lines: ['gantt of 2 lines at 80'], width: 22 })
+  expect(drawn).toEqual({ ok: true, lines: [plain('gantt of 2 lines at 80')], width: 22, kind: 'gantt' })
 
   const fence = '```\ngantt\n  title Plan\n```'
   expect(splitFences(fence, h => isKnownHeader(WITH_GANTT, h))[0]!.kind).toBe('mermaid')

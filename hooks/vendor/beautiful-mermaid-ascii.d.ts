@@ -1,5 +1,17 @@
 // The part of beautiful-mermaid's API this mod uses (src/ascii/index.ts,
-// src/er/parser.ts, src/er/types.ts).
+// src/er/parser.ts, src/er/types.ts, src/ascii/types.ts).
+
+/** Hex colors (`#rrggbb`) for each role a cell can have. */
+export interface AsciiTheme {
+  fg: string
+  border: string
+  line: string
+  arrow: string
+  accent?: string
+  bg?: string
+  corner?: string
+  junction?: string
+}
 
 export interface AsciiRenderOptions {
   useAscii?: boolean
@@ -7,6 +19,7 @@ export interface AsciiRenderOptions {
   paddingY?: number
   boxBorderPadding?: number
   colorMode?: 'none' | 'auto' | 'ansi16' | 'ansi256' | 'truecolor' | 'html'
+  theme?: Partial<AsciiTheme>
 }
 
 export function renderMermaidASCII(text: string, options?: AsciiRenderOptions): string

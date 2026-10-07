@@ -2,6 +2,8 @@
 // wrapped at 32 and then 20 characters.
 
 import type { DiagramRenderer } from '../diagram.ts'
+import { ROLE } from '../styled.ts'
+import type { StyledLine } from '../styled.ts'
 import { drawAscii, tight } from './ascii.ts'
 
 // A message (`A->>B: text`, any arrow) or a note (`Note over A,B: text`).
@@ -33,8 +35,21 @@ function wrapMessages(body: string, max: number): string {
     .join('\n')
 }
 
+/**
+ * Lifelines are guides: drawn like the edges, they would outweigh the
+ * messages that cross them. Where a message leaves one (`├`) stays an edge.
+ */
+function quietLifelines(lines: StyledLine[]): StyledLine[] {
+  return lines.map(l => {
+    const cells = Array.from(l.text)
+    const roles = Array.from(l.roles, (r, i) => (r === ROLE.edge && cells[i] === '│' ? ROLE.guide : r)).join('')
+    return { text: l.text, roles }
+  })
+}
+
 export const sequence: DiagramRenderer = {
   kind: 'sequenceDiagram',
   matches: header => /^sequenceDiagram\s*$/.test(header),
-  draw: (body, width) => drawAscii(body, width, [tight(wrapMessages(body, 32)), tight(wrapMessages(body, 20))]),
+  draw: (body, width) =>
+    quietLifelines(drawAscii(body, width, [tight(wrapMessages(body, 32)), tight(wrapMessages(body, 20))])),
 }

@@ -1,14 +1,15 @@
-// Plan a reply: which diagrams are drawn in its markdown and which need a
-// scroll box of their own.
+// Plan a reply: its runs of markdown, and between them the diagrams, each
+// either drawn in place or, too wide for that, in a scroll box.
 
 import type { Draw } from './draw.ts'
 import type { Segment } from './fences.ts'
+import type { StyledLine } from './styled.ts'
 
-/**
- * A reply as drawn: runs of markdown (diagrams that fit already drawn in
- * them), and the diagrams too wide to fit, each shown in a scroll box.
- */
-export type Part = { kind: 'text'; text: string } | { kind: 'wide'; lines: string[]; width: number }
+/** A drawn diagram: its lines, the widest's width, its kind, and whether it fits in place. */
+export type Diagram = { kind: 'diagram'; lines: StyledLine[]; width: number; title: string; fits: boolean }
+
+/** A reply as drawn: runs of markdown, and the diagrams between them. */
+export type Part = { kind: 'text'; text: string } | Diagram
 
 /** The reply's segments as parts, or undefined when they hold no diagram. */
 export function planReply(segments: Segment[], width: number, draw: Draw): Part[] | undefined {
@@ -32,11 +33,16 @@ export function planReply(segments: Segment[], width: number, draw: Draw): Part[
       // Only a fence that said `mermaid` gets a note; an unlabeled one that
       // merely looked like a diagram stays exactly as written.
       pushText(s.isLabeled ? `${s.raw}\n*mermaid: not drawn (${drawn.error})*` : s.raw)
-    } else if (drawn.width <= width) {
-      pushText('```\n' + drawn.lines.join('\n') + '\n```')
-    } else {
-      parts.push({ kind: 'wide', lines: drawn.lines, width: drawn.width })
+      continue
     }
+
+    parts.push({
+      kind: 'diagram',
+      lines: drawn.lines,
+      width: drawn.width,
+      title: drawn.kind,
+      fits: drawn.width <= width,
+    })
   }
 
   return parts

@@ -1,6 +1,8 @@
 // State diagrams, reshaped first into what the library draws well.
 
 import type { DiagramRenderer } from '../diagram.ts'
+import { plain, ROLE, span, styled } from '../styled.ts'
+import type { StyledLine } from '../styled.ts'
 import { drawAscii } from './ascii.ts'
 
 const SELF_LOOP = /^\s*([\w.-]+)\s*-->\s*([\w.-]+)\s*(?::\s*(.*))?$/
@@ -11,8 +13,8 @@ const SELF_LOOP = /^\s*([\w.-]+)\s*-->\s*([\w.-]+)\s*(?::\s*(.*))?$/
  * self-transitions are taken out (it routes them as long detours) and
  * returned as notes to print under the drawing.
  */
-function prepareState(body: string): { body: string; notes: string[] } {
-  const notes: string[] = []
+function prepareState(body: string): { body: string; notes: StyledLine[] } {
+  const notes: StyledLine[] = []
   const usesStart = /\bStart\b/.test(body)
   const usesEnd = /\bEnd\b/.test(body)
   let depth = 0
@@ -24,7 +26,8 @@ function prepareState(body: string): { body: string; notes: string[] } {
 
     const loop = SELF_LOOP.exec(line)
     if (loop && loop[1] === loop[2]) {
-      notes.push(`↻ ${loop[1]}${loop[3] ? `: ${loop[3].trim()}` : ''}`)
+      const label = loop[3]?.trim()
+      notes.push(styled(span('↻', ROLE.arrow), ' ', span(loop[1]!, ROLE.label), label ? span(`: ${label}`, ROLE.edgeLabel) : ''))
       return []
     }
 
@@ -44,6 +47,6 @@ export const state: DiagramRenderer = {
     const prepared = prepareState(body)
     const lines = drawAscii(prepared.body, width)
 
-    return prepared.notes.length > 0 ? [...lines, '', ...prepared.notes] : lines
+    return prepared.notes.length > 0 ? [...lines, plain(''), ...prepared.notes] : lines
   },
 }

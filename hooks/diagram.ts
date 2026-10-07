@@ -1,7 +1,9 @@
 // What a diagram is to this mod, and how a renderer is chosen for one. The
 // hooks reach renderers only through the `Renderers` set `registry.ts` wires.
 
-/** Draws one kind of diagram as lines of Unicode box art. */
+import type { StyledLine } from './styled.ts'
+
+/** Draws one kind of diagram as lines of Unicode box art, each cell with its role. */
 export interface DiagramRenderer {
   /** The kind's name, as its header spells it (`flowchart`, `erDiagram`). */
   readonly kind: string
@@ -11,7 +13,7 @@ export interface DiagramRenderer {
    * The drawing, uncut: as narrow as the kind can make it when it can't fit
    * `width`. Throws when the body can't be drawn; the message is shown.
    */
-  draw(body: string, width: number): string[]
+  draw(body: string, width: number): StyledLine[]
 }
 
 /**

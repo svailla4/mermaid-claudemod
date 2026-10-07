@@ -1,8 +1,5 @@
-// What a diagram is to this mod, and how a renderer is chosen for one.
-//
-// Each diagram kind is drawn by a `DiagramRenderer`; the hooks reach them only
-// through a `Renderers` set, which `registry.ts` wires. A new kind is a new
-// renderer module and one line there.
+// What a diagram is to this mod, and how a renderer is chosen for one. The
+// hooks reach renderers only through the `Renderers` set `registry.ts` wires.
 
 /** Draws one kind of diagram as lines of Unicode box art. */
 export interface DiagramRenderer {

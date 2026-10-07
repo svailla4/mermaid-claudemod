@@ -3,11 +3,10 @@
 // says what it expected, which the reply shows.
 
 import type { DiagramRenderer } from '../diagram.ts'
-import { fitFirst } from '../fit.ts'
-import { spacings } from './ascii.ts'
+import { drawAscii } from './ascii.ts'
 
 export const fallback: DiagramRenderer = {
   kind: 'mermaid',
   matches: () => true,
-  draw: (body, width) => fitFirst(spacings(body), width),
+  draw: (body, width) => drawAscii(body, width),
 }

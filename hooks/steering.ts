@@ -2,7 +2,7 @@
 
 import type { PromptComposeSection } from 'claude-code'
 
-export const STEERING = {
+const STEERING = {
   id: 'mermaid-render:diagrams',
   text: [
     'When a diagram would help (architecture, data flow, a state machine, a sequence of calls, entity relationships),',

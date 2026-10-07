@@ -11,16 +11,16 @@ export type Segment =
   | { kind: 'md'; text: string }
   | { kind: 'mermaid'; source: string; raw: string; isLabeled: boolean }
 
-/** Whether a diagram's trimmed first line is the header of a kind the mod draws. */
-export type IsDiagramHeader = (header: string) => boolean
-
 const LABELS = new Set(['mermaid', 'mmd'])
 const PLAIN_LABELS = new Set(['', 'text', 'txt', 'plain', 'plaintext'])
 
 const OPEN = /^( {0,3})(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/
 
-/** Splits markdown into text and diagram segments, in order. */
-export function splitFences(text: string, isDiagramHeader: IsDiagramHeader): Segment[] {
+/**
+ * Splits markdown into text and diagram segments, in order. `isDiagramHeader`
+ * says whether a trimmed first line opens a kind the mod draws.
+ */
+export function splitFences(text: string, isDiagramHeader: (header: string) => boolean): Segment[] {
   const lines = text.split('\n')
   const segments: Segment[] = []
   let md: string[] = []

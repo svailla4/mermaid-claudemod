@@ -2,8 +2,7 @@
 // wrapped at 32 and then 20 characters.
 
 import type { DiagramRenderer } from '../diagram.ts'
-import { fitFirst } from '../fit.ts'
-import { spacings, tight } from './ascii.ts'
+import { drawAscii, tight } from './ascii.ts'
 
 // A message (`A->>B: text`, any arrow) or a note (`Note over A,B: text`).
 const MESSAGE = /^(\s*(?:Note\b[^:]*|[^:]*?-{1,2}(?:>>|>|x|\))[^:]*):\s*)(.+)$/
@@ -24,7 +23,7 @@ function wrapWords(text: string, max: number): string {
 }
 
 /** A sequence diagram with long message and note text wrapped at `max` characters. */
-export function wrapMessages(body: string, max: number): string {
+function wrapMessages(body: string, max: number): string {
   return body
     .split('\n')
     .map(line => {
@@ -37,6 +36,5 @@ export function wrapMessages(body: string, max: number): string {
 export const sequence: DiagramRenderer = {
   kind: 'sequenceDiagram',
   matches: header => /^sequenceDiagram\s*$/.test(header),
-  draw: (body, width) =>
-    fitFirst([...spacings(body), tight(wrapMessages(body, 32)), tight(wrapMessages(body, 20))], width),
+  draw: (body, width) => drawAscii(body, width, [tight(wrapMessages(body, 32)), tight(wrapMessages(body, 20))]),
 }

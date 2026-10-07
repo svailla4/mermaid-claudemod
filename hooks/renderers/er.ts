@@ -71,7 +71,7 @@ function packRows(boxes: string[][], width: number): string[] {
     const height = Math.max(...row.map(b => b.length))
     if (out.length > 0) out.push('')
     for (let i = 0; i < height; i++) {
-      out.push(row.map(b => pad(b[i] ?? '', widthOf(b[0]!))).join(' '.repeat(GAP)).replace(/\s+$/, ''))
+      out.push(row.map(b => pad(b[i] ?? '', widthOf(b[0]!))).join(' '.repeat(GAP)).trimEnd())
     }
     row = []
     used = 0
@@ -100,15 +100,16 @@ function relationshipTable(diagram: ErDiagram): string[] {
     label.get(r.entity2) ?? r.entity2,
     r.label,
   ])
-  const w = (i: number) => Math.max(...rows.map(r => widthOf(r[i]!)))
+  // Column widths, measured once rather than per row.
+  const w = rows[0]!.map((_, i) => Math.max(...rows.map(r => widthOf(r[i]!))))
 
   return [
     '',
     'Relationships',
     ...rows.map(r =>
-      ['  ' + pad(r[0]!, w(0)), padStart(r[1]!, w(1)), r[2], pad(r[3]!, w(3)), pad(r[4]!, w(4)), r[5]]
+      ['  ' + pad(r[0]!, w[0]!), padStart(r[1]!, w[1]!), r[2], pad(r[3]!, w[3]!), pad(r[4]!, w[4]!), r[5]]
         .join(' ')
-        .replace(/\s+$/, ''),
+        .trimEnd(),
     ),
   ]
 }

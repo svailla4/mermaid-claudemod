@@ -1,19 +1,14 @@
-// Draw one Mermaid diagram as Unicode box art that fits a width, with the
-// renderer its header picks.
+// Draw one Mermaid diagram as Unicode box art, with the renderer its header
+// picks.
 
 import { diagramBody, headerOf, rendererFor } from './diagram.ts'
 import type { Renderers } from './diagram.ts'
-import { cut, widest } from './lines.ts'
+import { widest } from './lines.ts'
 
-/**
- * A drawing: `art` cut to the width asked for, `lines` the same drawing uncut
- * (what the scroll box shows), `isCut` when the two differ.
- */
-export type Drawn =
-  | { ok: true; art: string; lines: string[]; fullWidth: number; isCut: boolean }
-  | { ok: false; error: string }
+/** A drawing's lines, uncut, and the width of the widest; or why it failed. */
+export type Drawn = { ok: true; lines: string[]; width: number } | { ok: false; error: string }
 
-/** Draws a fence's source to fit `width` columns. */
+/** Draws a fence's source, aiming to fit `width` columns. */
 export type Draw = (source: string, width: number) => Drawn
 
 const CACHE_LIMIT = 200
@@ -34,14 +29,7 @@ export function createDrawer(renderers: Renderers): Draw {
     try {
       const body = diagramBody(source)
       const lines = rendererFor(renderers, headerOf(body)).draw(body, width)
-      const fullWidth = widest(lines)
-      drawn = {
-        ok: true,
-        art: lines.map(l => cut(l, width)).join('\n'),
-        lines,
-        fullWidth,
-        isCut: fullWidth > width,
-      }
+      drawn = { ok: true, lines, width: widest(lines) }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       drawn = { ok: false, error: message.split('\n')[0]!.slice(0, 160) }

@@ -32,10 +32,10 @@ export function planReply(segments: Segment[], width: number, draw: Draw): Part[
       // Only a fence that said `mermaid` gets a note; an unlabeled one that
       // merely looked like a diagram stays exactly as written.
       pushText(s.isLabeled ? `${s.raw}\n*mermaid: not drawn (${drawn.error})*` : s.raw)
-    } else if (!drawn.isCut) {
-      pushText('```\n' + drawn.art + '\n```')
+    } else if (drawn.width <= width) {
+      pushText('```\n' + drawn.lines.join('\n') + '\n```')
     } else {
-      parts.push({ kind: 'wide', lines: drawn.lines, width: drawn.fullWidth })
+      parts.push({ kind: 'wide', lines: drawn.lines, width: drawn.width })
     }
   }
 

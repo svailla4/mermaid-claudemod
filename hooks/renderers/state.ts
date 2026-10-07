@@ -1,8 +1,7 @@
 // State diagrams, reshaped first into what the library draws well.
 
 import type { DiagramRenderer } from '../diagram.ts'
-import { fitFirst } from '../fit.ts'
-import { spacings } from './ascii.ts'
+import { drawAscii } from './ascii.ts'
 
 const SELF_LOOP = /^\s*([\w.-]+)\s*-->\s*([\w.-]+)\s*(?::\s*(.*))?$/
 
@@ -12,7 +11,7 @@ const SELF_LOOP = /^\s*([\w.-]+)\s*-->\s*([\w.-]+)\s*(?::\s*(.*))?$/
  * self-transitions are taken out (it routes them as long detours) and
  * returned as notes to print under the drawing.
  */
-export function prepareState(body: string): { body: string; notes: string[] } {
+function prepareState(body: string): { body: string; notes: string[] } {
   const notes: string[] = []
   const usesStart = /\bStart\b/.test(body)
   const usesEnd = /\bEnd\b/.test(body)
@@ -43,7 +42,7 @@ export const state: DiagramRenderer = {
   matches: header => /^stateDiagram(?:-v2)?\s*$/.test(header),
   draw(body, width) {
     const prepared = prepareState(body)
-    const lines = fitFirst(spacings(prepared.body), width)
+    const lines = drawAscii(prepared.body, width)
 
     return prepared.notes.length > 0 ? [...lines, '', ...prepared.notes] : lines
   },

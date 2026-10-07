@@ -52,7 +52,7 @@ const WITH_GANTT: Renderers = { ...RENDERERS, kinds: [...RENDERERS.kinds, gantt]
 test('a new kind is drawn and found in unlabeled fences once it is registered', () => {
   const draw = createDrawer(WITH_GANTT)
   const drawn = draw('%% plan\ngantt\n  title Plan', 80)
-  expect(drawn.ok && drawn.art).toBe('gantt of 2 lines at 80')
+  expect(drawn).toEqual({ ok: true, lines: ['gantt of 2 lines at 80'], width: 22 })
 
   const fence = '```\ngantt\n  title Plan\n```'
   expect(splitFences(fence, h => isKnownHeader(WITH_GANTT, h))[0]!.kind).toBe('mermaid')

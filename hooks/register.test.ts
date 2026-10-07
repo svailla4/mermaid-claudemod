@@ -114,3 +114,64 @@ test('a session without a terminal gets no diagram section', async ($, on) => {
   const { sections } = await $.prompt.compose({ ...MODEL, surfaces: [] })
   expect(sections.map(s => s.id)).toEqual(['intro'])
 })
+
+test('an ER diagram lists entities in boxes and relationships as a table', async ($, on) => {
+  const fence = [
+    '```mermaid',
+    'erDiagram',
+    '  CUSTOMER ||--o{ ORDER : places',
+    '  ORDER ||..o| PAYMENT : "paid by"',
+    '  CUSTOMER {',
+    '    int id PK',
+    '    string email UK',
+    '  }',
+    '```',
+  ].join('\n')
+  const { seen } = await draw($, on, fence)
+  expect(seen).toContain('│ PK int    id    │')
+  expect(seen).toContain('Relationships')
+  expect(seen).toMatch(/CUSTOMER 1 ──── 0\.\.n ORDER +places/)
+  // Non-identifying (`..`) relationships are dashed.
+  expect(seen).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
+  // No relationship line runs through an entity box.
+  for (const line of seen!.split('\n').filter(l => l.startsWith('│'))) {
+    expect(line).not.toMatch(/[○╟╢]/)
+  }
+})
+
+test('a state diagram draws Start and End and lists self-transitions', async ($, on) => {
+  const fence = [
+    '```mermaid',
+    'stateDiagram-v2',
+    '  [*] --> Draft: start',
+    '  Draft --> Draft: save',
+    '  Draft --> Done: finish',
+    '  Done --> [*]',
+    '```',
+  ].join('\n')
+  const { seen } = await draw($, on, fence)
+  expect(seen).toMatch(/│ +Start +│/)
+  expect(seen).toMatch(/│ +End +│/)
+  expect(seen).toContain('↻ Draft: save')
+  expect(seen).not.toContain('[*]')
+})
+
+test('a sequence diagram with long messages wraps them to fit', async ($, on) => {
+  const message = 'ask the assistant to read the uploaded document and prepare every input'
+  const fence = [
+    '```mermaid',
+    'sequenceDiagram',
+    '  participant A as Customer',
+    '  participant B as Host',
+    '  participant C as Server',
+    `  A->>B: ${message}`,
+    `  B->>C: ${message}`,
+    `  C-->>A: ${message}`,
+    '```',
+  ].join('\n')
+  const { seen } = await draw($, on, fence)
+  const art = seen!.split('\n').filter(l => !l.startsWith('```'))
+  for (const line of art) expect(line.endsWith('…')).toBe(false)
+  expect(seen).toContain('uploaded document and prepare')
+  expect(seen).toContain('every input')
+})

@@ -1,4 +1,4 @@
-// beautiful-mermaid 1.1.3 (MIT, lukilabs), ASCII renderer only. Bundled with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
+// beautiful-mermaid 1.1.3 (MIT, lukilabs): the ASCII renderer and the ER parser only. Bundled with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
 
 // ../../.claude/jobs/66092017/tmp/pkgs/bm/src/multiline-utils.ts
 function normalizeBrTags(label) {
@@ -448,33 +448,6 @@ function gridKey(c) {
 }
 var EMPTY_STYLE = { name: "", styles: {} };
 
-// ../../.claude/jobs/66092017/tmp/pkgs/bm/src/theme.ts
-var MIX = {
-  /** Primary text: near-full fg */
-  text: 100,
-  // just use --fg directly
-  /** Secondary text (group headers): fg mixed at 60% */
-  textSec: 60,
-  /** Muted text (edge labels, notes): fg mixed at 40% */
-  textMuted: 40,
-  /** Faint text (de-emphasized): fg mixed at 25% */
-  textFaint: 25,
-  /** Edge/connector lines: fg mixed at 50% for clear visibility */
-  line: 50,
-  /** Arrow head fill: fg mixed at 85% for clear visibility */
-  arrow: 85,
-  /** Node fill tint: fg mixed at 3% */
-  nodeFill: 3,
-  /** Node/group stroke: fg mixed at 20% */
-  nodeStroke: 20,
-  /** Group header band tint: fg mixed at 5% */
-  groupHeader: 5,
-  /** Inner divider strokes: fg mixed at 12% */
-  innerStroke: 12,
-  /** Key badge background opacity (ER diagrams) */
-  keyBadge: 10
-};
-
 // ../../.claude/jobs/66092017/tmp/pkgs/bm/src/ascii/ansi.ts
 var DEFAULT_ASCII_THEME = {
   fg: "#27272a",
@@ -490,26 +463,6 @@ var DEFAULT_ASCII_THEME = {
   junction: "#a1a1aa"
   // same as border
 };
-function mixColors(fg, bg, pct) {
-  const f = parseHex(fg), b = parseHex(bg);
-  const mix = (a, z) => Math.round(a * (pct / 100) + z * (1 - pct / 100));
-  const r = mix(f.r, b.r), g = mix(f.g, b.g), bl = mix(f.b, b.b);
-  return "#" + [r, g, bl].map((c) => c.toString(16).padStart(2, "0")).join("");
-}
-function diagramColorsToAsciiTheme(colors) {
-  const line = colors.line ?? mixColors(colors.fg, colors.bg, MIX.line);
-  const border = colors.border ?? mixColors(colors.fg, colors.bg, MIX.nodeStroke);
-  return {
-    fg: colors.fg,
-    border,
-    line,
-    arrow: colors.accent ?? mixColors(colors.fg, colors.bg, MIX.arrow),
-    accent: colors.accent,
-    bg: colors.bg,
-    corner: line,
-    junction: border
-  };
-}
 function detectColorMode() {
   const proc = globalThis.process;
   if (proc) {
@@ -5603,11 +5556,7 @@ function renderMermaidASCII(text, options = {}) {
     }
   }
 }
-var renderMermaidAscii = renderMermaidASCII;
 export {
-  DEFAULT_ASCII_THEME,
-  detectColorMode,
-  diagramColorsToAsciiTheme,
-  renderMermaidASCII,
-  renderMermaidAscii
+  parseErDiagram,
+  renderMermaidASCII
 };

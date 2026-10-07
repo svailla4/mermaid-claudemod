@@ -83,7 +83,7 @@ test('an unsupported mermaid kind keeps its source and says why', async ($, on) 
   expect(seen).toContain('*mermaid: not drawn (')
 })
 
-test('a wide diagram is cut to the terminal width', async ($, on) => {
+test('a left-right flowchart too wide for the terminal is turned top-down to fit', async ($, on) => {
   const long = 'x'.repeat(60)
   const fence = `\`\`\`mermaid\nflowchart LR\n  A[${long}] --> B[${long}] --> C[${long}]\n\`\`\``
   const { seen } = await draw($, on, fence)
@@ -185,54 +185,44 @@ const WIDE = [
   '```',
 ].join('\n')
 
-test('a diagram cut to fit says how to scroll it, and /diagram opens it in a pane', async ($, on) => {
-  let opened: unknown
-  on('ui.open', (_, e) => {
-    opened = e
-    return { value: { isPlaced: true } }
+// Mounts a reply and returns the scroll box drawn for it, if any, with what
+// the engine was asked to draw around it.
+async function boxed(
+  $: Parameters<Parameters<typeof test>[1]>[0],
+  on: Parameters<Parameters<typeof test>[1]>[1],
+  text: string,
+  isFullscreen: boolean,
+) {
+  const seen: string[] = []
+  on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
+    seen.push(e.props.text)
+    const { Markdown } = $.ui.resolve(e)
+    return Markdown({ text: e.props.text })
   })
-  const { seen } = await draw($, on, WIDE)
-  const hint = /`\/diagram (\d+)` opens it scrollable/.exec(seen!)
-  expect(hint).not.toBeNull()
-
-  const ran = await $.command.run({ command: 'diagram', args: hint![1] })
-  expect(opened).toMatchObject({ id: 'mermaid-diagram', focus: true, closeOnEscape: true })
-  expect(ran.text).toContain(`Diagram ${hint![1]} opened`)
-
-  const pane = await $.ui.mount({
+  const ui = await $.ui.mount({
     plugin: 'mermaid-render',
     surface: 'terminal',
-    component: 'Pane',
-    requestId: 'mermaid-diagram',
-    props: { title: 'Diagram', isFocused: true, bodyColumns: 60, placement: 'dock' },
+    component: 'AssistantMessage',
+    props: { text, isFirstOfReply: true },
+    viewport: { columns: 80, rows: 40, isFullscreen },
   })
-  const at = async () => (await pane.find({ type: 'Text', text: /^ {2}column \d+ of \d+$/ }))?.text
-  const start = await at()
-  expect(start).toMatch(/column 1 of \d+/)
-  expect(await pane.find({ type: 'Text', text: /aaaa/ })).toBeDefined()
+  return { ui, seen, box: await ui.find({ type: 'Client' }) }
+}
 
-  await pane.press({ key: 'right' })
-  await pane.press({ key: 'right' })
-  await pane.press({ key: 'right' })
-  expect(await at()).toMatch(/column 61 of/)
-  // Scrolled past the first box, the third one's text comes into view.
-  expect(await pane.find({ type: 'Text', text: /bbbb/ })).toBeDefined()
-
-  await pane.press({ key: 'left' })
-  expect(await at()).toMatch(/column 41 of/)
-  await pane.press({ key: 'start' })
-  expect(await at()).toBe(start)
-  await pane.unmount()
+test('on the main screen a wide diagram is still boxed in the reply, and says it cannot scroll', async ($, on) => {
+  const { ui, box } = await boxed($, on, WIDE, false)
+  expect(box).toBeDefined()
+  await ui.resize({ columns: 40, rows: 12, in: box!.key! })
+  const status = await ui.find({ type: 'Text', text: /columns 1–40 of/, in: box!.key! })
+  expect(status?.text).toContain('scrolling needs the fullscreen layout')
+  await ui.unmount()
 })
 
-test('/diagram with an unknown number says which exist', async $ => {
-  const ran = await $.command.run({ command: 'diagram', args: '99' })
-  expect(ran.text).toMatch(/^No diagram 99/)
-})
-
-test('a diagram that fits gets no scroll hint', async ($, on) => {
-  const { seen } = await draw($, on, FLOW)
-  expect(seen).not.toContain('/diagram')
+test('a diagram that fits is drawn in the reply without a box', async ($, on) => {
+  const { ui, seen, box } = await boxed($, on, FLOW, true)
+  expect(box).toBeUndefined()
+  expect(seen.join('\n')).toMatch(BOX)
+  await ui.unmount()
 })
 
 test('in fullscreen a wide diagram scrolls inside its own box in the reply', async ($, on) => {
@@ -253,7 +243,6 @@ test('in fullscreen a wide diagram scrolls inside its own box in the reply', asy
   // The text around the box is still the engine's to draw; no hint is needed.
   expect(seen.join('\n')).toContain('Before.')
   expect(seen.join('\n')).toContain('After.')
-  expect(seen.join('\n')).not.toContain('/diagram')
 
   const box = await ui.find({ type: 'Client' })
   expect(box).toBeDefined()

@@ -6,7 +6,7 @@
 
 import type { ClientModule } from 'claude-code'
 
-export type ViewerProps = { lines: string[]; width: number }
+export type ViewerProps = { lines: string[]; width: number; canScroll: boolean }
 
 type Drag = { px: number; py: number; x: number; y: number }
 type ViewerState = { x: number; y: number; drag?: Drag }
@@ -73,8 +73,9 @@ const Viewer: ClientModule<ViewerProps, ViewerState> = (props, surface) => {
         <Text wrap="truncate-end">{Array.from(line).slice(x, x + columns).join('') || ' '}</Text>
       ))}
       <Text dimColor wrap="truncate-end">
-        drag to pan, or click and use ← → ↑ ↓ (Home/End) · {span}
-        {down}
+        {props.canScroll
+          ? `drag to pan, or click and use ← → ↑ ↓ (Home/End) · ${span}${down}`
+          : `${span}${down} · scrolling needs the fullscreen layout`}
       </Text>
     </Box>
   )

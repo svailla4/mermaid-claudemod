@@ -493,3 +493,61 @@ test('in fullscreen a wide diagram scrolls inside its own box in the reply', asy
   expect(await status()).toMatch(/◀ 1–38\//)
   await ui.unmount()
 })
+
+// Mounts an approved plan's result row through the mod, with a stand-in for
+// the engine beneath it that records the plan it was asked to draw.
+async function drawPlan(
+  $: Engine,
+  on: On,
+  plan: string,
+  { columns = 120, surface = 'terminal', isErrored = false }: { columns?: number; surface?: RenderSurface; isErrored?: boolean } = {},
+) {
+  const seen: string[] = []
+  on('ui.render', { component: 'ToolResult' }, ($, e) => {
+    seen.push((e.props.output as { plan: string }).plan)
+    const { Markdown } = $.ui.resolve(e)
+    return Markdown({ text: seen[seen.length - 1]! })
+  })
+  const ui = await $.ui.mount({
+    plugin: 'mermaid-render',
+    surface,
+    component: 'ToolResult',
+    props: {
+      tool_use_id: 'toolu_plan',
+      tool: 'ExitPlanMode',
+      output: { plan, isAgent: false, filePath: '/tmp/plan.md' },
+      isErrored,
+    },
+    viewport: { columns, rows: 40 },
+  })
+  await ui.drawn()
+  await ui.unmount()
+  return seen.join('\n')
+}
+
+test('an approved plan draws its diagrams as box art in the plan text', async ($, on) => {
+  const plan = await drawPlan($, on, `# Plan\n\nThe flow:\n\n${FLOW}\n\n1. Build it.`)
+  expect(plan).not.toContain('```mermaid')
+  expect(plan).toMatch(BOX)
+  expect(plan).toContain('Customer')
+  expect(plan).toContain('# Plan')
+  expect(plan).toContain('1. Build it.')
+  for (const line of plan.split('\n')) expect(Array.from(line).length).toBeLessThanOrEqual(112)
+})
+
+test('a plan without a diagram is passed through unchanged', async ($, on) => {
+  const text = '# Plan\n\n```python\nprint(1)\n```'
+  expect(await drawPlan($, on, text)).toBe(text)
+})
+
+test('a plan diagram too wide to draw keeps its source', async ($, on) => {
+  expect(await drawPlan($, on, WIDE, { columns: 60 })).toBe(WIDE)
+})
+
+test('a refused plan is left to the engine', async ($, on) => {
+  expect(await drawPlan($, on, FLOW, { isErrored: true })).toBe(FLOW)
+})
+
+test('the desktop surface draws a plan as written', async ($, on) => {
+  expect(await drawPlan($, on, FLOW, { surface: 'desktop' })).toBe(FLOW)
+})

@@ -59,6 +59,7 @@ claude plugin install mermaid-render@mermaid-render --scope user
   - ER keys get badges (PK, FK, UK).
 
   Every color also has a text or shape cue, so nothing depends on color alone.
+- **Draws diagrams in approved plans.** Once you approve a plan in plan mode, its diagrams show as box art where the plan appears in the transcript. They are uncolored, and one too wide for the window keeps its source. The approval dialog itself can't be changed by a plugin, so it still shows the source.
 - **Asks Claude to use Mermaid.** A short system-prompt section asks Claude to draw diagrams as Mermaid instead of hand-made ASCII art. You can turn it off (see Settings).
 
 ### Supported diagrams

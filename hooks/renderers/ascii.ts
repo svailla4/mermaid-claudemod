@@ -90,9 +90,10 @@ export const tight = (text: string): Attempt => attempt(text, TIGHT)
 
 /**
  * The body drawn roomy, then tight, then each of `more`: the first that fits
- * `width`, else the narrowest (the earliest on a tie). An attempt that throws
- * ends the fitting with its error. Each drawing is polished unless `finish`
- * says otherwise.
+ * `width`, else the narrowest (the earliest on a tie). The first attempt's
+ * error is the drawing's; a later attempt that throws is passed over, as the
+ * library can mangle a tighter layout of a drawing it laid out well. Each
+ * drawing is polished unless `finish` says otherwise.
  */
 export function drawAscii(
   body: string,
@@ -105,8 +106,14 @@ export function drawAscii(
   let best: StyledLine[] = []
   let bestWidth = Infinity
 
-  for (const next of [attempt(body, ROOMY, finish), attempt(body, TIGHT, finish), ...more]) {
-    const lines = next()
+  for (const [i, next] of [attempt(body, ROOMY, finish), attempt(body, TIGHT, finish), ...more].entries()) {
+    let lines: StyledLine[]
+    try {
+      lines = next()
+    } catch (error) {
+      if (i === 0) throw error
+      continue
+    }
     const w = widestLine(lines)
     if (w < bestWidth) {
       best = lines

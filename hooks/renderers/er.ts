@@ -6,8 +6,9 @@
 // placeholder node the size of its box, and each relationship a small node
 // between its two entities (`e0 --- r0 --- e1`), which tells each cardinality
 // its end. The placeholders are then replaced by the mod's own boxes and by
-// the line, verb and cardinalities. A diagram the flowchart engine can't take
-// is drawn as before: boxes in rows, then a table of relationships.
+// the line, verb and cardinalities. When those stops make a chain too long
+// for the engine, entities are joined directly, each line labeled
+// `1 verb 0..n` in source order.
 
 import { parseErDiagram } from '../vendor/beautiful-mermaid-ascii.js'
 import type { Cardinality, ErAttribute, ErDiagram, ErEntity, ErRelationship } from '../vendor/beautiful-mermaid-ascii.js'
@@ -127,53 +128,6 @@ function packRows(boxes: StyledLine[][], width: number): StyledLine[] {
   return out
 }
 
-/**
- * The relationships as an aligned table: entity names in their accent,
- * cardinalities quiet, the line solid when identifying and dashed when not.
- */
-function relationshipTable(diagram: ErDiagram): StyledLine[] {
-  if (diagram.relationships.length === 0) return []
-
-  const label = new Map(diagram.entities.map(e => [e.id, e.label]))
-  const rows = diagram.relationships.map(r => ({
-    from: label.get(r.entity1) ?? r.entity1,
-    one: CARDINALITY[r.cardinality1],
-    line: r.identifying ? '────' : '┄┄┄┄',
-    other: CARDINALITY[r.cardinality2],
-    to: label.get(r.entity2) ?? r.entity2,
-    verb: r.label,
-  }))
-  // Column widths, measured once rather than per row.
-  const w = (pick: (r: (typeof rows)[number]) => string) => Math.max(...rows.map(r => widthOf(pick(r))))
-  const from = w(r => r.from)
-  const one = w(r => r.one)
-  const other = w(r => r.other)
-  const to = w(r => r.to)
-
-  return [
-    plain(''),
-    styled(span('Relationships', ROLE.heading)),
-    ...rows.map(r =>
-      trimEnd(
-        styled(
-          '  ',
-          span(r.from, ROLE.heading),
-          ' '.repeat(from - widthOf(r.from) + 1 + one - widthOf(r.one)),
-          span(r.one, ROLE.detail),
-          ' ',
-          span(r.line, ROLE.edge),
-          ' ',
-          span(r.other, ROLE.detail),
-          ' '.repeat(other - widthOf(r.other) + 1),
-          span(r.to, ROLE.heading),
-          ' '.repeat(to - widthOf(r.to) + 2),
-          span(r.verb, ROLE.edgeLabel),
-        ),
-      ),
-    ),
-  ]
-}
-
 // Placeholder text: private-use characters no diagram holds. A node's label
 // starts with its tag (`MARK`, its id, `MARK_END`) and is filled out with `FILL`.
 const MARK = '\uE000'
@@ -199,8 +153,9 @@ const textWidth = (r: ErRelationship) => Math.max(...Object.values(textOf(r)).ma
 /**
  * The flowchart the layout is borrowed from. Nodes are declared where first
  * used, in source order, which keeps each relationship between its entities.
+ * Each relationship is a node of its own, or with `direct` a labeled line.
  */
-function standIn(diagram: ErDiagram): string {
+function standIn(diagram: ErDiagram, direct: boolean): string {
   const index = new Map(diagram.entities.map((e, i) => [e.id, i]))
   const declared = new Set<string>()
   const entity = (id: string) => {
@@ -216,8 +171,12 @@ function standIn(diagram: ErDiagram): string {
   const lines = ['flowchart TD']
   diagram.relationships.forEach((r, k) => {
     const link = r.identifying ? '---' : '-.-'
-    // Room for the texts right of a centered line, or for all three on one row.
     const { one, verb, other } = textOf(r)
+    if (direct) {
+      lines.push(`  ${entity(r.entity1)} ${link}|${one} ${verb} ${other}| ${entity(r.entity2)}`)
+      return
+    }
+    // Room for the texts right of a centered line, or for all three on one row.
     const width = Math.max(2 * textWidth(r) + 1, widthOf(`${one} ${verb} ${other}`) + 2)
     lines.push(`  ${entity(r.entity1)} ${link} r${k}["${placeholder(`r${k}`, width, 1)}"]`)
     lines.push(`  r${k} ${link} ${entity(r.entity2)}`)
@@ -232,22 +191,37 @@ type Frame = { x0: number; y0: number; x1: number; y1: number }
 
 const BLANK: Cell = { ch: ' ', role: ROLE.plain }
 
-/** The frame around the placeholder tagged `id`; throws when it isn't drawn. */
+// The cells a frame's sides and edges are drawn with, junctions included.
+const SIDE = '│├┤┼'
+const EDGE = '─┬┴┼'
+
+const CORNER = '┌┐└┘├┤┬┴┼'
+
+/**
+ * The frame around the placeholder tagged `id`: the first drawn cell left of
+ * the tag (inside a frame there are only blanks), then along the sides and
+ * edges, which lines may join anywhere, to the corners. Throws when it isn't
+ * drawn whole.
+ */
 function frameOf(grid: Grid, id: string): Frame {
   const tag = cellsOf(tagOf(id))
+  const at = (x: number, y: number) => grid[y]?.[x]
+  const isFrame = (x: number, y: number, chars: string) => chars.includes(at(x, y)?.ch ?? ' ')
   for (let y = 0; y < grid.length; y++) {
     const row = grid[y]!
     for (let x = 0; x + tag.length <= row.length; x++) {
       if (!tag.every((ch, i) => row[x + i]!.ch === ch)) continue
       let x0 = x - 1
-      while (x0 >= 0 && row[x0]!.ch !== '│') x0--
+      while (x0 >= 0 && (row[x0]!.ch === ' ' || row[x0]!.ch === FILL)) x0--
+      if (!SIDE.includes(row[x0]?.ch ?? ' ')) break
       let y0 = y - 1
-      while (y0 >= 0 && grid[y0]![x0]?.ch !== '┌') y0--
+      while (isFrame(x0, y0, SIDE)) y0--
       let x1 = x0 + 1
-      while (x1 < grid[y0]!.length && grid[y0]![x1]!.ch !== '┐') x1++
+      while (isFrame(x1, y0, EDGE)) x1++
       let y1 = y + 1
-      while (y1 < grid.length && grid[y1]![x0]?.ch !== '└') y1++
-      if (x0 < 0 || y0 < 0 || y1 >= grid.length || grid[y1]![x1]?.ch !== '┘') break
+      while (isFrame(x0, y1, SIDE)) y1++
+      const isCorner = (cx: number, cy: number) => isFrame(cx, cy, CORNER)
+      if (x0 < 0 || y0 < 0 || ![[x0, y0], [x1, y0], [x0, y1], [x1, y1]].every(([cx, cy]) => isCorner(cx!, cy!))) break
       return { x0, y0, x1, y1 }
     }
   }
@@ -401,37 +375,122 @@ function stampRelationship(grid: Grid, r: ErRelationship, f: Frame, frames: Map<
   write(grid, x + 2, mid + 1, span(lower, ROLE.detail))
 }
 
+const VERTICAL = '│┆┊╎'
+const HORIZONTAL = '─┄┈╌'
+
+/**
+ * A relationship drawn as a labeled line, its label moved off the stroke: the
+ * engine writes it over the line, which cuts through it (`1 has│0..n`) or
+ * runs on in its spaces (`─1─has─0..n─`), or just above where the line
+ * starts. On a vertical line the label goes right of it (`│ 1 has 0..n`), on
+ * a horizontal one above it, and the stroke is drawn whole. Left as drawn
+ * when it isn't found or the cells it would move to are taken.
+ */
+function relabel(grid: Grid, r: ErRelationship): void {
+  const { one, verb, other } = textOf(r)
+  const label = cellsOf(`${one} ${verb} ${other}`)
+  const isFree = (y: number, from: number, to: number) =>
+    range(from, to).every(x => (grid[y]?.[x]?.ch ?? ' ') === ' ')
+  const text = [span(one, ROLE.detail), span(' ', ROLE.plain), span(verb, ROLE.edgeLabel), span(' ', ROLE.plain), span(other, ROLE.detail)]
+
+  for (let y = 0; y < grid.length; y++) {
+    const row = grid[y]!
+    for (let x = 0; x + label.length <= row.length; x++) {
+      const cells = row.slice(x, x + label.length)
+      const isStroke = (c: Cell) => VERTICAL.includes(c.ch) || HORIZONTAL.includes(c.ch)
+      // A label already moved is styled; relationships can share a label.
+      const isDrawn = (c: Cell, i: number) =>
+        (c.ch === label[i] && c.role !== ROLE.detail && c.role !== ROLE.edgeLabel) ||
+        (label[i] === ' ' && isStroke(c)) ||
+        VERTICAL.includes(c.ch)
+      if (!cells.every(isDrawn) || !cells.some((c, i) => c.ch === label[i] && c.ch !== ' ')) continue
+      const end = x + label.length
+
+      const across = HORIZONTAL.includes(row[x - 1]?.ch ?? ' ') || HORIZONTAL.includes(row[end]?.ch ?? ' ')
+      if (across) {
+        const stroke = HORIZONTAL.includes(row[x - 1]?.ch ?? ' ') ? row[x - 1]!.ch : row[end]!.ch
+        const above = isFree(y - 1, x - 1, end) ? y - 1 : isFree(y + 1, x - 1, end) ? y + 1 : -1
+        if (above < 0) return
+        for (let i = x; i < end; i++) put(grid, i, y, { ch: stroke, role: ROLE.edge })
+        write(grid, x, above, ...text)
+        return
+      }
+
+      // The column the line runs down: through the label, or on from above or below it.
+      const through = cells.findIndex(c => VERTICAL.includes(c.ch))
+      const column =
+        through >= 0
+          ? x + through
+          : range(x, end - 1).find(i => VERTICAL.includes(grid[y - 1]?.[i]?.ch ?? ' ') || VERTICAL.includes(grid[y + 1]?.[i]?.ch ?? ' '))
+      if (column === undefined) return
+      const stroke = [row[column], grid[y - 1]?.[column], grid[y + 1]?.[column]].find(c => c && VERTICAL.includes(c.ch))!.ch
+      for (let i = x; i < end; i++) if (i !== column) put(grid, i, y, BLANK)
+      if (!isFree(y, column + 1, column + 1 + label.length)) {
+        for (let i = x; i < end; i++) put(grid, i, y, { ch: label[i - x]!, role: ROLE.label })
+        return
+      }
+      put(grid, column, y, { ch: stroke, role: ROLE.edge })
+      write(grid, column + 2, y, ...text)
+      return
+    }
+  }
+}
+
 // Arrowheads the engine leaves where lines merge, and the stroke each stands in.
 const HEAD: Record<string, string> = { '▼': '│', '▲': '│', '►': '─', '◄': '─', '▶': '─', '◀': '─' }
 
 /** Replaces each placeholder of `diagram` drawn in `grid` with what it stands for. */
-function stamp(diagram: ErDiagram, grid: Grid): Grid {
+function stamp(diagram: ErDiagram, grid: Grid, direct: boolean): Grid {
   // Relationships have no direction.
   for (const c of grid.flat()) {
     if (c.role === ROLE.arrow && HEAD[c.ch]) Object.assign(c, { ch: HEAD[c.ch], role: ROLE.edge })
   }
   const frames = new Map(diagram.entities.map((e, i) => [e.id, frameOf(grid, `e${i}`)]))
-  const relations = diagram.relationships.map((r, k) => ({ r, f: frameOf(grid, `r${k}`) }))
+  const relations = direct ? [] : diagram.relationships.map((r, k) => ({ r, f: frameOf(grid, `r${k}`) }))
 
   for (const { r, f } of relations) stampRelationship(grid, r, f, frames)
+  if (direct) for (const r of diagram.relationships) relabel(grid, r)
   diagram.entities.forEach(e => stampBox(grid, frames.get(e.id)!, width => box(e, width)))
 
   return grid
 }
 
+// A relationship's cardinality token (`||--o{`). The library's parser reads
+// `}o` and `}|` only as `o{` and `|{`, so a left-hand end written the other
+// way round is turned to match.
+const RELATIONSHIP = /^(\S+\s+)([|o}{]+)(--|\.\.)([|o}{]+)(\s+\S+\s*:)/
+// Keys run together (`PK,FK`), which the library's parser only reads apart.
+const JOINED_KEYS = /\b(PK|FK|UK)\s*,\s*(?=(?:PK|FK|UK)\b)/g
+
+/** A source line as the library's parser reads it; a comment's quotes are left alone. */
+function normalize(line: string): string {
+  const quote = line.indexOf('"')
+  const [code, comment] = quote < 0 ? [line, ''] : [line.slice(0, quote), line.slice(quote)]
+  const fixed = code
+    .replace(RELATIONSHIP, (_, from, left, link, right, to) => from + left.replace(/\}/g, '{') + link + right + to)
+    .replace(JOINED_KEYS, '$1 ')
+  return fixed + comment
+}
+
 /** The diagram's lines; throws when the source holds no entity. */
 function drawEr(body: string, width: number): StyledLine[] {
-  const lines = body.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('%%'))
+  const lines = body
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('%%'))
+    .map(normalize)
   const diagram = parseErDiagram(lines)
   if (diagram.entities.length === 0) throw new Error('no entities found')
 
-  const packed = () => packRows(relatedOrder(diagram).map(e => box(e)), width)
-  if (diagram.relationships.length === 0) return packed()
+  if (diagram.relationships.length === 0) return packRows(relatedOrder(diagram).map(e => box(e)), width)
+  const draw = (direct: boolean) => drawAscii(standIn(diagram, direct), width, [], grid => polish(stamp(diagram, grid, direct)))
   try {
-    return drawAscii(standIn(diagram), width, [], grid => polish(stamp(diagram, grid)))
+    return draw(false)
   } catch {
-    // A layout too long for the engine, or a placeholder it didn't draw whole.
-    return [...packed(), ...relationshipTable(diagram)]
+    // A chain too long with a stop on every relationship, or a stop the
+    // engine didn't draw whole. Joined directly, a chain too long still
+    // throws, and keeps its source with the reason.
+    return draw(true)
   }
 }
 

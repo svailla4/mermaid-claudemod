@@ -217,13 +217,22 @@ test('an entity related to itself gets its relationship in a small box below it'
   expect(art.indexOf('EMPLOYEE')).toBeLessThan(art.indexOf('manages'))
 })
 
-test('an ER chain too long for the layout lists its relationships as a table', async ($, on) => {
+test('an ER chain too long for a stop on each relationship joins its entities directly, never with a table', async ($, on) => {
   const chain = Array.from({ length: 12 }, (_, i) => `  E${i} ||--o{ E${i + 1} : has`)
   const { art } = await draw($, on, ER_FENCE.replace(/```$/, [...chain, '```'].join('\n')))
-  expect(art).toContain('Relationships')
-  expect(art).toMatch(/E0 +1 ──── 0\.\.n E1 +has/)
-  // Non-identifying (`..`) relationships are dashed there too.
-  expect(art).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
+  expect(art).not.toContain('Relationships')
+  // Each label sits right of its line, read in source order.
+  expect(art).toMatch(/│ 1 has 0\.\.n\n/)
+  expect(art).toMatch(/┆ 1 paid by 0\.\.1/)
+  expect(art).not.toMatch(/has│|─has─/)
+})
+
+test('ER sources the library reads only one way round are drawn whole', async ($, on) => {
+  const fence = ['```mermaid', 'erDiagram', '  TASK }o--o{ LABEL : tagged', '  TASK {', '    uuid label_id PK,FK', '  }', '```'].join('\n')
+  const { art } = await draw($, on, fence)
+  // A `}o` end is a relationship, and keys run together keep their badges.
+  expect(art).toMatch(/│ 0\.\.n\n *│ tagged\n *│ 0\.\.n\n/)
+  expect(art).toMatch(/│ PK,FK label_id uuid │/)
 })
 
 test('a flowchart draws frames, labels, edges, arrowheads and edge labels each their own way', async ($, on) => {
@@ -378,9 +387,8 @@ function measure(tree: unknown) {
 }
 
 test('a big diagram stays within the bounds of a tree', async ($, on) => {
-  // Forty entities of ten keyed attributes: thousands of colored runs.
+  // Forty entities of ten keyed attributes, packed in rows to fit: thousands of colored runs.
   const entities = Array.from({ length: 40 }, (_, i) => [
-    `  E${i} ||--o{ E${i + 1} : has`,
     `  E${i} {`,
     ...Array.from({ length: 10 }, (_, j) => `    uuid field_${j} ${j % 2 ? 'FK' : 'PK'}`),
     '  }',

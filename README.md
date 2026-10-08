@@ -120,6 +120,13 @@ The ASCII layout comes from [beautiful-mermaid](https://github.com/lukilabs/beau
 ESBUILD=/path/to/esbuild ./scripts/build-vendor.sh   # or let it use npx esbuild@0.28.2
 ```
 
+## What it runs and sends
+
+- **No network.** The plugin makes no requests and sends nothing anywhere; diagrams are drawn locally from the reply text.
+- **One command.** At session start it runs `uname -s` once, to match the transcript's reply bullet (`⏺` on macOS, `●` elsewhere). Nothing else is run.
+- **The system prompt.** With `steer` on, it adds a short section to the system prompt. Nothing else in the conversation is changed: only the screen is.
+- **No files written.** Settings live in Claude Code's own plugin configuration.
+
 ## Development
 
 ```bash
@@ -131,3 +138,5 @@ claude --plugin-dir .      # try it in a session, reloading on save
 ## License
 
 MIT; see [LICENSE](LICENSE). The bundled beautiful-mermaid is MIT, Copyright (c) 2026 Craft Docs; see `hooks/vendor/LICENSE-beautiful-mermaid`.
+
+This is an independent project. It is not affiliated with or endorsed by the [Mermaid](https://mermaid.js.org) project, Craft Docs, or Anthropic.

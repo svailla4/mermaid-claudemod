@@ -1,10 +1,13 @@
 {
   "name": "mermaid-render",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Draws Mermaid diagrams in Claude Code's terminal replies as colored Unicode box art; wide ones scroll inside a box in the reply.",
   "author": {
     "name": "Stephane Vaillancourt"
   },
+  "homepage": "https://github.com/svailla4/mermaid-claudemod",
+  "repository": "https://github.com/svailla4/mermaid-claudemod",
+  "license": "MIT",
   "userConfig": {
     "steer": {
       "type": "boolean",

@@ -179,7 +179,7 @@ const textOf = (row: Cell[]) => row.map(c => c.ch).join('')
 const rolesOf = (row: Cell[]) => row.map(c => c.role).join('')
 
 /** A row holding only vertical strokes: it stretches what crosses it and says nothing. */
-const isStretch = (row: Cell[]) => row.every(c => c.ch === ' ' || c.ch === '│')
+const isStretch = (row: Cell[]) => row.every(c => ' │┆┊'.includes(c.ch))
 
 /** A row holding only box sides and dividers, as an empty class section leaves twice. */
 const isDivider = (row: Cell[]) => row.some(c => c.ch === '├') && row.every(c => ' │├─┤'.includes(c.ch))

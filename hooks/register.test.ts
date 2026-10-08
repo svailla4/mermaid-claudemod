@@ -179,31 +179,51 @@ const ER_FENCE = [
   '```',
 ].join('\n')
 
-test('an ER diagram lists entities in boxes and relationships as a table', async ($, on) => {
+test('an ER diagram draws its relationships as lines between the boxes', async ($, on) => {
   const { art } = await draw($, on, ER_FENCE)
   // Key badge, name, then type, in aligned columns.
-  expect(art).toContain('│ PK id    int    │')
-  expect(art).toContain('│ UK email string │')
-  expect(art).toContain('Relationships')
-  expect(art).toMatch(/CUSTOMER 1 ──── 0\.\.n ORDER +places/)
+  expect(art).toMatch(/│ PK id +int +│/)
+  expect(art).toMatch(/│ UK email string +│/)
+  expect(art).not.toContain('Relationships')
+  // Each line carries the cardinality of the box above, the verb, then the
+  // cardinality of the box below, between the two boxes.
+  const lines = art.split('\n')
+  const row = (text: string) => lines.findIndex(l => l.includes(text))
+  expect(art).toMatch(/│ 1\n *│ places\n *│ 0\.\.n\n/)
+  expect(row('CUSTOMER')).toBeLessThan(row('places'))
+  expect(row('places')).toBeLessThan(row('ORDER'))
   // Non-identifying (`..`) relationships are dashed.
-  expect(art).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
-  // No relationship line runs through an entity box.
-  for (const line of art.split('\n').filter(l => l.startsWith('│'))) {
-    expect(line).not.toMatch(/[○╟╢]/)
-  }
+  expect(art).toMatch(/┆ 1\n *┆ paid by\n *┆ 0\.\.1\n/)
+  expect(row('paid by')).toBeLessThan(row('PAYMENT'))
 })
 
-test('an ER diagram colors entity names, key badges, types and verbs', async ($, on) => {
+test('an ER diagram colors entity names, key badges, types, lines, cardinalities and verbs', async ($, on) => {
   const { tree } = await draw($, on, ER_FENCE)
   expect(lookOf(tree, 'CUSTOMER')).toEqual({ color: 'claude', bold: true })
   expect(lookOf(tree, 'PK')).toEqual({ color: 'warning', bold: true })
   expect(lookOf(tree, 'FK')).toEqual({ color: 'suggestion', bold: true })
   expect(lookOf(tree, 'UK')).toEqual({ color: 'merged', bold: true })
   expect(lookOf(tree, 'string')).toEqual({ color: 'inactive' })
-  expect(lookOf(tree, '────')).toEqual({ color: 'suggestion' })
+  expect(runsOf(tree).some(r => r.text.trim() === '│' && r.look.color === 'suggestion')).toBe(true)
+  expect(runsOf(tree).some(r => r.text.trim() === '┆' && r.look.color === 'suggestion')).toBe(true)
+  expect(lookOf(tree, '0..n')).toEqual({ color: 'inactive' })
   expect(lookOf(tree, 'places')).toEqual({ dimColor: true, italic: true })
   expect(lookOf(tree, '╭')).toEqual({ color: 'inactive' })
+})
+
+test('an entity related to itself gets its relationship in a small box below it', async ($, on) => {
+  const { art } = await draw($, on, '```mermaid\nerDiagram\n  EMPLOYEE ||--o{ EMPLOYEE : manages\n```')
+  expect(art).toMatch(/│ 1 manages 0\.\.n │/)
+  expect(art.indexOf('EMPLOYEE')).toBeLessThan(art.indexOf('manages'))
+})
+
+test('an ER chain too long for the layout lists its relationships as a table', async ($, on) => {
+  const chain = Array.from({ length: 12 }, (_, i) => `  E${i} ||--o{ E${i + 1} : has`)
+  const { art } = await draw($, on, ER_FENCE.replace(/```$/, [...chain, '```'].join('\n')))
+  expect(art).toContain('Relationships')
+  expect(art).toMatch(/E0 +1 ──── 0\.\.n E1 +has/)
+  // Non-identifying (`..`) relationships are dashed there too.
+  expect(art).toMatch(/ORDER +1 ┄┄┄┄ 0\.\.1 PAYMENT +paid by/)
 })
 
 test('a flowchart draws frames, labels, edges, arrowheads and edge labels each their own way', async ($, on) => {
@@ -219,7 +239,7 @@ test('a flowchart draws frames, labels, edges, arrowheads and edge labels each t
   expect(runsOf(tree).some(r => r.text.trim() === '│' && r.look.color === 'suggestion' && !r.look.bold)).toBe(true)
 })
 
-test('a state diagram draws Start and End and lists self-transitions', async ($, on) => {
+test('a state diagram draws Start and End, and self-transitions as loops on their box', async ($, on) => {
   const fence = [
     '```mermaid',
     'stateDiagram-v2',
@@ -232,9 +252,11 @@ test('a state diagram draws Start and End and lists self-transitions', async ($,
   const { art, tree } = await draw($, on, fence)
   expect(art).toMatch(/│ +Start +│/)
   expect(art).toMatch(/│ +End +│/)
-  expect(art).toContain('↻ Draft: save')
+  expect(art).toMatch(/│ +Draft +├─╮ save\n *│ +│◄╯\n/)
+  expect(art).not.toContain('↻')
   expect(art).not.toContain('[*]')
-  expect(lookOf(tree, ': save')).toEqual({ dimColor: true, italic: true })
+  expect(lookOf(tree, 'save')).toEqual({ dimColor: true, italic: true })
+  expect(lookOf(tree, '◄')).toEqual({ color: 'suggestion', bold: true })
 })
 
 test('edges between boxes are one stroke long and boxes hold no blank rows', async ($, on) => {

@@ -1,7 +1,7 @@
 {
   "name": "mermaid-render",
   "version": "1.0.0",
-  "description": "Draws Mermaid diagrams in Claude Code's terminal replies as colored Unicode box art; wide ones scroll inside a box in the reply.",
+  "description": "Draws Mermaid diagrams in Claude Code's terminal replies as colored Unicode box art; wide ones scroll inside a box in the reply. A side pane gathers the diagrams of plans and replies to step through.",
   "author": {
     "name": "Stephane Vaillancourt"
   },
@@ -12,5 +12,6 @@
       "description": "Adds a short system-prompt section asking Claude to draw diagrams as mermaid blocks instead of ASCII art.",
       "default": true
     }
-  }
+  },
+  "types": "./types/index.d.ts"
 }

@@ -61,6 +61,18 @@ claude plugin install mermaid-render@mermaid-render --scope user
   Every color also has a text or shape cue, so nothing depends on color alone.
 - **Asks Claude to use Mermaid.** A short system-prompt section asks Claude to draw diagrams as Mermaid instead of hand-made ASCII art. You can turn it off (see Settings).
 
+### The diagrams pane
+
+A pane beside the conversation gathers diagrams so you can step through them:
+
+- **Plans.** When Claude puts a plan up for approval (leaving plan mode), the plan's diagrams open in the pane next to it. A new plan replaces the last plan's diagrams.
+- **Replies.** Diagrams from later replies join the pane too. They're still drawn in the reply.
+- **Toggle.** `[◀] 2/3 · Save flow [▶]` above the drawing. Click the arrows, or focus the pane (ctrl+x tab, or a click) and press `p` or `n`. Each diagram is titled by the heading above it in the plan or reply.
+- **Wide drawings** scroll in their own box inside the pane, as in replies.
+- **`/diagrams`** opens the pane at any time.
+
+The pane docks on the right in the fullscreen layout, and sits above the prompt otherwise.
+
 ### Supported diagrams
 
 | Kind | Notes |
@@ -90,6 +102,8 @@ echo '{"steer": "false"}' | claude plugin configure mermaid-render@mermaid-rende
 
 ## Known limitations
 
+- **The pane opens by itself only in a wide terminal.** Opened on its own, as when a plan goes up for approval, a pane needs 144 columns, or 110 once you've opened it with `/diagrams` in that session. Narrower, you get a toast instead; `/diagrams` opens it at any width.
+
 - **Scrolling needs the fullscreen layout.** That's the default; `"tui": "fullscreen"` in settings. On the main screen (inside tmux by default, or with `CLAUDE_CODE_NO_FLICKER=0`), the box still appears and shows the start of the diagram, but mouse and keys can't reach it.
 - **Terminal only.** The desktop app and the VS Code extension show Mermaid source as usual.
 - **Long chains are refused.** The layout engine never finishes on a flowchart or state diagram whose longest path passes about 25 nodes. Such a chart would freeze the terminal, so charts with a path longer than 22 nodes keep their source, with a note to split them.
@@ -110,6 +124,8 @@ The plugin is a Claude Code hooks module (`hooks/register.tsx`). A `ui.render` h
 - a diagram too wide to fit goes in a `Client` scroll box (`hooks/viewer.tsx`).
 
 Drawing goes through one renderer per diagram kind (`hooks/renderers/`), behind a small interface (`hooks/diagram.ts`) and one registry (`hooks/registry.ts`). Adding a kind means a new module plus one line in the registry.
+
+The diagrams pane (`hooks/pane.tsx`, `hooks/gallery.ts`) keeps its list in the session's plugin state. Plan mode's reminders say where the plan is written; when `ExitPlanMode` is called, the mod reads that file, and the approved text afterwards, for its diagrams. Finished replies add theirs as they're recorded.
 
 ER diagrams borrow the flowchart layout (`hooks/renderers/er.ts`). Each entity becomes a placeholder node the size of its box. Each relationship becomes a small node between its two entities, which is how each cardinality knows its end. The mod then draws its own boxes, lines and labels over the placeholders.
 

@@ -31,7 +31,7 @@ const INSET = 2
 const MAX_PROPS = 95_000
 
 /** The props of a scroll box: colors dropped, then rows, until they fit. */
-function viewerProps(part: Diagram, canScroll: boolean): ViewerProps {
+export function viewerProps(part: Pick<Diagram, 'lines' | 'width' | 'title'>, canScroll: boolean): ViewerProps {
   const props: ViewerProps = { lines: part.lines, width: part.width, title: part.title, canScroll }
   if (JSON.stringify(props).length <= MAX_PROPS) return props
 

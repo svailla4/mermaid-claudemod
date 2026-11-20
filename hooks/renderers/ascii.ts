@@ -3,11 +3,11 @@
 
 import { renderMermaidASCII } from '../vendor/beautiful-mermaid-ascii.js'
 import type { AsciiRenderOptions, AsciiTheme } from '../vendor/beautiful-mermaid-ascii.js'
-import { ROLE, tidyLines, widestLine } from '../styled.ts'
-import type { Role, StyledLine } from '../styled.ts'
-import { refuseLongPaths } from './guard.ts'
-import { polish } from './polish.ts'
-import type { Cell, Grid } from './polish.ts'
+import { ROLE, tidyLines, widestLine } from '../styled'
+import type { Role, StyledLine } from '../styled'
+import { refuseLongPaths } from './guard'
+import { polish } from './polish'
+import type { Cell, Grid } from './polish'
 
 /** One way to draw a diagram; called only when the ways before it didn't fit. */
 type Attempt = () => StyledLine[]
@@ -46,7 +46,9 @@ const ROOMY: AsciiRenderOptions = {
   colorMode: 'truecolor',
   theme: SENTINEL,
 }
-const TIGHT: AsciiRenderOptions = { ...ROOMY, paddingX: 2 }
+// paddingX below 3 leaves an edge that turns beside a box no room to run
+// before it meets the box: its corner lands on the box side (`┌┤┤`).
+const TIGHT: AsciiRenderOptions = { ...ROOMY, paddingX: 3 }
 
 const ESCAPE = /\x1b\[([\d;]*)m/y
 

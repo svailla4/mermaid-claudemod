@@ -5,7 +5,7 @@
 // header of a diagram kind the mod draws. Unclosed fences (a reply still
 // streaming) are left alone until they close.
 
-import { diagramBody, headerOf } from './diagram.ts'
+import { diagramBody, headerOf } from './diagram'
 
 export type Segment =
   | { kind: 'md'; text: string }

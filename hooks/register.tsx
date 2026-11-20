@@ -1,16 +1,19 @@
 // The entry module: wires the renderers into the drawer and fence finder, and
-// hooks the system prompt, the terminal's assistant messages and approved plans.
+// hooks the system prompt, the terminal's assistant messages, approved plans
+// and the end of each reply, where its diagrams are checked.
 
 import type { Register } from 'claude-code'
 
-import { composeReply } from './compose.tsx'
-import { isKnownHeader } from './diagram.ts'
-import { createDrawer } from './draw.ts'
-import { splitFences } from './fences.ts'
-import { inlineDiagrams } from './inline.ts'
-import { planReply } from './plan.ts'
-import { RENDERERS } from './registry.ts'
-import { withSteering } from './steering.ts'
+import { createChecker } from './check'
+import { composeReply } from './compose'
+import { isKnownHeader } from './diagram'
+import { createDrawer } from './draw'
+import { splitFences } from './fences'
+import { reportFor } from './gate'
+import { inlineDiagrams } from './inline'
+import { planReply } from './plan'
+import { RENDERERS } from './registry'
+import { withSteering } from './steering'
 
 // Cells the transcript takes before a reply's text (the bullet and its gap)
 // plus a margin, so drawn lines never touch the edge.
@@ -19,8 +22,9 @@ const INDENT = 4
 const RESULT_INDENT = 8
 const DEFAULT_COLUMNS = 100
 
-// One drawer for the module, so its cache outlives each redraw.
+// One drawer and one checker for the module, so their caches outlive each redraw.
 const draw = createDrawer(RENDERERS)
+const check = createChecker()
 const isDiagramHeader = (header: string) => isKnownHeader(RENDERERS, header)
 
 // The transcript's reply bullet is `⏺` on macOS and `●` elsewhere; the hooks
@@ -48,12 +52,37 @@ export const register: Register = (on, options) => {
     })
   }
 
+  const isChecking = options.check !== false
+
+  // When Claude ends a reply whose diagrams have problems, it is sent back once
+  // to fix them: `stop_hook_active` marks the reply that answers a Stop hook,
+  // which is let through, so a diagram it still gets wrong can't loop.
+  if (isChecking) {
+    on('classic.Stop', async ($, e, next) => {
+      const result = await next(e)
+      if (e.stop_hook_active) return result
+
+      // Warnings are about the terminal's drawing; where the surfaces can't be
+      // read, they count rather than the check being lost.
+      let warnings = true
+      try {
+        warnings = (await $.session.surfaces()).includes('terminal')
+      } catch {
+        // Keep counting them.
+      }
+      const report = reportFor(e.last_assistant_message ?? '', isDiagramHeader, check, { warnings })
+      if (report === undefined) return result
+
+      return { ...result, block: result.block ? `${result.block}\n\n${report}` : report }
+    })
+  }
+
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // The desktop and editor draw their own way; a summary row keeps its mark.
     if (e.surface !== 'terminal' || e.props.isSummary) return next(e)
 
     const width = Math.max(40, (e.viewport?.columns ?? DEFAULT_COLUMNS) - INDENT)
-    const parts = planReply(splitFences(e.props.text, isDiagramHeader), width, draw)
+    const parts = planReply(splitFences(e.props.text, isDiagramHeader), width, draw, isChecking ? check : undefined)
     if (parts === undefined) return next(e)
 
     return composeReply(

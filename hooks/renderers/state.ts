@@ -1,10 +1,10 @@
 // State diagrams, reshaped first into what the library draws well.
 
-import type { DiagramRenderer } from '../diagram.ts'
-import { cellsOf, plain, ROLE, span, styled, tidyLines } from '../styled.ts'
-import type { Role, StyledLine } from '../styled.ts'
-import { drawAscii } from './ascii.ts'
-import type { Cell, Grid } from './polish.ts'
+import type { DiagramRenderer } from '../diagram'
+import { cellsOf, plain, ROLE, span, styled, tidyLines } from '../styled'
+import type { Role, StyledLine } from '../styled'
+import { drawAscii } from './ascii'
+import type { Cell, Grid } from './polish'
 
 const SELF_LOOP = /^\s*([\w.-]+)\s*-->\s*([\w.-]+)\s*(?::\s*(.*))?$/
 

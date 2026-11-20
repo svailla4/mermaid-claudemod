@@ -1,0 +1,1378 @@
+Fixes to beautiful-mermaid 1.1.3, applied by build-vendor.sh before bundling
+(patch -p2 from the unpacked package). Each is valid Mermaid the library read
+or drew differently from Mermaid 11, found by diffing its parse of diagrams
+Claude wrote, and of every form of each kind, against Mermaid's own parser:
+
+  flowchart  `A-->B` with no spaces; ids with `.`, or letters outside ASCII;
+             a label given after the node was first named (`A --> B`, then
+             `B[Label]`); a quoted label holding the closing delimiter
+             (`B("a (b)")`); parallelograms (`[/a/]`, `[\a\]`), drawn as the
+             nearest trapezoid; Mermaid 11's `A@{ shape: diam, label: "x" }`;
+             `-. text .-` and labels without spaces (`-.x.->`); `--o`, `--x`,
+             `o--o`, `x--x` and longer links (`--->`); `~~~`, which places
+             its nodes side by side and draws nothing; a space before `|label|`; `;`
+             between statements; a header with no direction; `click` lines;
+             a node in the first subgraph that names it, as Mermaid places it.
+             Mermaid 11's edge ids (`A e1@--> B`), and their `e1@{ }` lines.
+  sequence   participant names with spaces; `create participant`; two-way
+             arrows (`<<->>`, `<<-->>`) with a head at each end; `option`
+             inside `critical`; a message with empty text (`A->>B:`).
+  state      one start and one end state in each scope; ids with `.`; a
+             `:::class` after a state in a transition.
+  class      `A -- B` and `A .. B`: lines with no marker.
+  erDiagram  `}o` on the left of a relationship; an entity block on one line;
+             keys written `PK, FK`; an alias on an entity's block
+             (`A["Account"] {`), shown as its name; cardinalities and lines
+             in words (`A one or more to zero or many B : has`).
+  labels     entity codes (`#59;`, `#quot;`) shown as their characters.
+
+And in the ASCII drawing, each a defect found by checking every drawing of
+those diagrams for line ends that meet nothing and labels that don't survive:
+
+  boxes      a box's sides sit where its edges meet it, so an edge never
+             starts or ends a cell or two off its box when a label widened
+             the column beside it.
+  labels     edge labels placed one by one, each moved the least distance
+             that keeps it off the labels before it and off every box (two
+             labels on one line used to interleave letter by letter); the
+             gaps between a label's words hide the line under them; class
+             relationship labels likewise, drawn after every line.
+  bundles    edges joined into one trunk only when their far ends sit side by
+             side, so an edge from another row no longer runs along the
+             trunk and reads as one of its edges.
+  sequence   a self-message's label one line per row (a wrapped one broke the
+             row), with room for it before the next lifeline.
+
+The library's own tests of the behaviours this changes are updated to match,
+golden drawings included, each reviewed against the drawing it replaces.
+
+diff -ruN a/package/src/__tests__/parser.test.ts b/package/src/__tests__/parser.test.ts
+--- a/package/src/__tests__/parser.test.ts
++++ b/package/src/__tests__/parser.test.ts
+@@ -45,8 +45,10 @@
+     expect(() => parseMermaid('sequenceDiagram\n  A ->> B')).toThrow('Invalid mermaid header')
+   })
+ 
+-  it('throws on header without direction', () => {
+-    expect(() => parseMermaid('graph\n  A --> B')).toThrow('Invalid mermaid header')
++  it('reads a header without direction as top-down, as Mermaid does', () => {
++    const graph = parseMermaid('graph\n  A --> B')
++    expect(graph.direction).toBe('TD')
++    expect(graph.edges).toHaveLength(1)
+   })
+ })
+ 
+@@ -737,13 +739,15 @@
+     expect(g.edges[0]!.target).toBe('_end')
+   })
+ 
+-  it('assigns unique IDs to multiple [*] pseudostates', () => {
++  it('gives each scope one start and one end state, as Mermaid does', () => {
+     const g = parseMermaid(`stateDiagram-v2
+       [*] --> A
+-      [*] --> B`)
+-    // First [*] source → _start, second → _start2
+-    expect(g.nodes.has('_start')).toBe(true)
+-    expect(g.nodes.has('_start2')).toBe(true)
++      [*] --> B
++      A --> [*]
++      B --> [*]`)
++    expect([...g.nodes.values()].filter(n => n.shape === 'state-start').map(n => n.id)).toEqual(['_start'])
++    expect([...g.nodes.values()].filter(n => n.shape === 'state-end').map(n => n.id)).toEqual(['_end'])
++    expect(g.edges.map(e => `${e.source}>${e.target}`)).toEqual(['_start>A', '_start>B', 'A>_end', 'B>_end'])
+   })
+ 
+   it('parses state description: s1 : Description', () => {
+diff -ruN a/package/src/__tests__/testdata/ascii/cls_all_relationships.txt b/package/src/__tests__/testdata/ascii/cls_all_relationships.txt
+--- a/package/src/__tests__/testdata/ascii/cls_all_relationships.txt
++++ b/package/src/__tests__/testdata/ascii/cls_all_relationships.txt
+@@ -6,12 +6,14 @@
+   I ..> J : depends
+   K ..|> L : implements
+ ---
+-+---+    +---+    +---+    +---+    +---+    +---+
+-| A |    | C |    | E |    | G |    | I |    | L |
+-+---+    +---+    +---+    +---+    +---+    +---+
+-  ^        *        o        |        :        ^
+- inherit owns      has     uses    depend implements
+-  |        |        |        v        v        :
+-+---+    +---+    +---+    +---+    +---+    +---+
+-| B |    | D |    | F |    | H |    | J |    | K |
+-+---+    +---+    +---+    +---+    +---+    +---+
+++---+    +---+    +---+    +---+    +---+    +---+      
++| A |    | C |    | E |    | G |    | I |    | L |      
+++---+    +---+    +---+    +---+    +---+    +---+      
++  ^        *        o        |        :        ^        
++ inherits  owns    has     uses    depends  implements  
++  |        |        |        v        v        :        
+++---+    +---+    +---+    +---+    +---+    +---+      
++| B |    | D |    | F |    | H |    | J |    | K |      
+++---+    +---+    +---+    +---+    +---+    +---+      
++                                                        
++                                                        
+diff -ruN a/package/src/__tests__/testdata/ascii/nested_subgraphs_with_labels.txt b/package/src/__tests__/testdata/ascii/nested_subgraphs_with_labels.txt
+--- a/package/src/__tests__/testdata/ascii/nested_subgraphs_with_labels.txt
++++ b/package/src/__tests__/testdata/ascii/nested_subgraphs_with_labels.txt
+@@ -9,28 +9,38 @@
+ C
+ end
+ ---
+-+-------------+
+-|             |
+-|  Web Server |
+-|             |
+-+-------------+
+-       |       
+-       |       
+-       |       
+-       |       
+-       v       
+-+-------------+
+-|             |
+-| API Gateway |
+-|             |
+-+-------------+
+-       |       
+-       |       
+-       |       
+-       |       
+-       v       
+-+-------------+
+-|             |
+-|  Web Server |
+-|             |
+-+-------------+
+++-----------------+
++|    Frontend     |
++|                 |
++|                 |
++| +-------------+ |
++| |             | |
++| |  Web Server | |
++| |             | |
++| +-------------+ |
++|        |        |
+++--------|--------+
++         |         
++         |         
++         |         
+++--------|--------+
++|     Backend     |
++|        |        |
++|        v        |
++| +-------------+ |
++| |             | |
++| | API Gateway | |
++| |             | |
++| +-------------+ |
++|        |        |
++|        |        |
++|        |        |
++|        |        |
++|        v        |
++| +-------------+ |
++| |             | |
++| |  Web Server | |
++| |             | |
++| +-------------+ |
++|                 |
+++-----------------+
+diff -ruN a/package/src/__tests__/testdata/ascii/seq_self_message.txt b/package/src/__tests__/testdata/ascii/seq_self_message.txt
+--- a/package/src/__tests__/testdata/ascii/seq_self_message.txt
++++ b/package/src/__tests__/testdata/ascii/seq_self_message.txt
+@@ -2,17 +2,17 @@
+   Alice->>Alice: Think
+   Alice->>Bob: Result
+ ---
+- +-------+    +-----+   
+- | Alice |    | Bob |   
+- +-------+    +-----+   
+-     |           |      
+-     +---+       |      
+-     |   | Think |      
+-     <---+       |      
+-     |           |      
+-     |  Result   |      
+-     |----------->      
+-     |           |      
+- +-------+    +-----+   
+- | Alice |    | Bob |   
+- +-------+    +-----+   
++ +-------+       +-----+   
++ | Alice |       | Bob |   
++ +-------+       +-----+   
++     |              |      
++     +---+          |      
++     |   | Think    |      
++     <---+          |      
++     |              |      
++     |   Result     |      
++     |-------------->      
++     |              |      
++ +-------+       +-----+   
++ | Alice |       | Bob |   
++ +-------+       +-----+   
+diff -ruN a/package/src/__tests__/testdata/unicode/cls_all_relationships.txt b/package/src/__tests__/testdata/unicode/cls_all_relationships.txt
+--- a/package/src/__tests__/testdata/unicode/cls_all_relationships.txt
++++ b/package/src/__tests__/testdata/unicode/cls_all_relationships.txt
+@@ -6,12 +6,14 @@
+   I ..> J : depends
+   K ..|> L : implements
+ ---
+-┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐
+-│ A │    │ C │    │ E │    │ G │    │ I │    │ L │
+-└───┘    └───┘    └───┘    └───┘    └───┘    └───┘
+-  △        ◆        ◇        │        ┊        △
+- inherit owns      has     uses    depend implements
+-  │        │        │        ▼        ▼        ┊
+-┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐
+-│ B │    │ D │    │ F │    │ H │    │ J │    │ K │
+-└───┘    └───┘    └───┘    └───┘    └───┘    └───┘
++┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐      
++│ A │    │ C │    │ E │    │ G │    │ I │    │ L │      
++└───┘    └───┘    └───┘    └───┘    └───┘    └───┘      
++  △        ◆        ◇        │        ┊        △        
++ inherits  owns    has     uses    depends  implements  
++  │        │        │        ▼        ▼        ┊        
++┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐    ┌───┐      
++│ B │    │ D │    │ F │    │ H │    │ J │    │ K │      
++└───┘    └───┘    └───┘    └───┘    └───┘    └───┘      
++                                                        
++                                                        
+diff -ruN a/package/src/__tests__/testdata/unicode/seq_self_message.txt b/package/src/__tests__/testdata/unicode/seq_self_message.txt
+--- a/package/src/__tests__/testdata/unicode/seq_self_message.txt
++++ b/package/src/__tests__/testdata/unicode/seq_self_message.txt
+@@ -2,17 +2,17 @@
+   Alice->>Alice: Think
+   Alice->>Bob: Result
+ ---
+- ┌───────┐    ┌─────┐   
+- │ Alice │    │ Bob │   
+- └───┬───┘    └──┬──┘   
+-     │           │      
+-     ├───┐       │      
+-     │   │ Think │      
+-     ◀───┘       │      
+-     │           │      
+-     │  Result   │      
+-     │───────────▶      
+-     │           │      
+- ┌───┴───┐    ┌──┴──┐   
+- │ Alice │    │ Bob │   
+- └───────┘    └─────┘   
++ ┌───────┐       ┌─────┐   
++ │ Alice │       │ Bob │   
++ └───┬───┘       └──┬──┘   
++     │              │      
++     ├───┐          │      
++     │   │ Think    │      
++     ◀───┘          │      
++     │              │      
++     │   Result     │      
++     │──────────────▶      
++     │              │      
++ ┌───┴───┐       ┌──┴──┐   
++ │ Alice │       │ Bob │   
++ └───────┘       └─────┘   
+diff -ruN a/package/src/ascii/canvas.ts b/package/src/ascii/canvas.ts
+--- a/package/src/ascii/canvas.ts
++++ b/package/src/ascii/canvas.ts
+@@ -281,6 +281,12 @@
+  * Convert the canvas to a multi-line string (row by row, left to right).
+  * Optionally applies ANSI color codes based on character roles.
+  */
++/**
++ * A space that hides what is under it when canvases merge (a plain space lets
++ * it through): the gaps between a label's words. Written out as a space.
++ */
++export const OPAQUE_SPACE = '\u00a0'
++
+ export function canvasToString(canvas: Canvas, options?: CanvasToStringOptions): string {
+   const [maxX, maxY] = getCanvasSize(canvas)
+   const lines: string[] = []
+@@ -294,7 +300,8 @@
+       // Plain text output — no colors
+       let line = ''
+       for (let x = 0; x <= maxX; x++) {
+-        line += canvas[x]![y]!
++        const ch = canvas[x]![y]!
++        line += ch === OPAQUE_SPACE ? ' ' : ch
+       }
+       lines.push(line)
+     } else {
+@@ -302,8 +309,9 @@
+       const chars: string[] = []
+       const roles: (CharRole | null)[] = []
+       for (let x = 0; x <= maxX; x++) {
+-        chars.push(canvas[x]![y]!)
+-        roles.push(roleCanvas[x]?.[y] ?? null)
++        const ch = canvas[x]![y]!
++        chars.push(ch === OPAQUE_SPACE ? ' ' : ch)
++        roles.push(ch === OPAQUE_SPACE ? null : (roleCanvas[x]?.[y] ?? null))
+       }
+       lines.push(colorizeLine(chars, roles, theme, colorMode))
+     }
+diff -ruN a/package/src/ascii/class-diagram.ts b/package/src/ascii/class-diagram.ts
+--- a/package/src/ascii/class-diagram.ts
++++ b/package/src/ascii/class-diagram.ts
+@@ -75,7 +75,7 @@
+  * The actual marker character will be determined at placement time based on line direction.
+  */
+ function getRelMarker(type: RelationshipType, markerAt: 'from' | 'to'): RelMarker {
+-  const dashed = type === 'dependency' || type === 'realization'
++  const dashed = type === 'dependency' || type === 'realization' || type === 'dashed-link'
+   return { type, markerAt, dashed }
+ }
+ 
+@@ -113,6 +113,13 @@
+     case 'aggregation':
+       // Hollow diamond - omnidirectional shape
+       return useAscii ? 'o' : '◇'
++    case 'link':
++    case 'dashed-link': {
++      // No marker: the line itself runs on to the box.
++      const vertical = direction === 'up' || direction === 'down'
++      if (type === 'link') return vertical ? (useAscii ? '|' : '│') : (useAscii ? '-' : '─')
++      return vertical ? (useAscii ? ':' : '┊') : (useAscii ? '.' : '╌')
++    }
+     case 'association':
+     case 'dependency':
+       // Directional arrow - rotate based on line direction
+@@ -393,6 +400,8 @@
+   const dashH = useAscii ? '.' : '╌'
+   const dashV = useAscii ? ':' : '┊'
+ 
++  const placedLabels: Array<{ y: number; x0: number; x1: number }> = []
++  const labelDraws: Array<() => void> = []
+   for (const rel of diagram.relationships) {
+     const fromP = placed.get(rel.from)
+     const toP = placed.get(rel.to)
+@@ -599,9 +608,11 @@
+     }
+ 
+     // Draw relationship label at midpoint if present (supports multi-line)
+-    // Add padding around the label for readability
+-    if (rel.label) {
+-      const lines = splitLines(rel.label)
++    // Add padding around the label for readability. Labels are drawn once
++    // every line is, so no later relationship's line runs through one.
++    const relLabel = rel.label
++    if (relLabel) labelDraws.push(() => {
++      const lines = splitLines(relLabel)
+       const maxLabelWidth = Math.max(...lines.map(l => l.length)) + 2 // +2 for padding
+ 
+       // Calculate ideal label position based on routing direction
+@@ -668,13 +679,38 @@
+       }
+ 
+       // Center lines vertically around labelY
+-      const startY = labelY - halfHeight
++      let startY = labelY - halfHeight
+ 
++      // A label clear of the labels drawn before it: where two relationships
++      // leave one class their labels share a midpoint, so the later one moves
++      // toward its own target, or off the row, to the nearest clear spot.
++      const spans = (dx: number, dy: number) => lines.map((l, i) => {
++        const start = Math.max(0, idealMidX - Math.floor((l.length + 2) / 2)) + dx
++        return { y: startY + i + dy, x0: start, x1: start + l.length + 1 }
++      })
++      const clear = (dx: number, dy: number) => spans(dx, dy).every(s =>
++        s.x0 >= 0 && s.y >= 0 && !placedLabels.some(p => p.y === s.y && p.x0 <= s.x1 && s.x0 <= p.x1) &&
++        Array.from({ length: s.x1 - s.x0 + 1 }, (_, i) => s.x0 + i).every(x => !isInsideBox(x, s.y, excludeIds)))
++      const toward = toCX >= fromCX ? 1 : -1
++      let shiftX = 0
++      if (!clear(0, 0)) {
++        const tries: Array<[number, number]> = []
++        for (let k = 1; k <= maxLabelWidth + 2; k++) tries.push([toward * k, 0])
++        for (const dy of [-1, 1, -2, 2]) tries.push([0, dy])
++        for (let k = 1; k <= maxLabelWidth + 2; k++) tries.push([-toward * k, 0])
++        const found = tries.find(([dx, dy]) => clear(dx, dy))
++        if (found) {
++          shiftX = found[0]
++          startY += found[1]
++        }
++      }
++      placedLabels.push(...spans(shiftX, 0))
++
+       for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+         const paddedLine = ` ${lines[lineIdx]!} `  // Add space padding on both sides
+         // Calculate label start, but ensure it doesn't go negative
+         const idealLabelStart = idealMidX - Math.floor(paddedLine.length / 2)
+-        const labelStart = Math.max(0, idealLabelStart)
++        const labelStart = Math.max(0, idealLabelStart) + shiftX
+         const y = startY + lineIdx
+         // Ensure canvas is wide enough for the label
+         const labelEnd = labelStart + paddedLine.length
+@@ -690,8 +726,9 @@
+           }
+         }
+       }
+-    }
++    })
+   }
++  for (const drawLabel of labelDraws) drawLabel()
+ 
+   return canvasToString(canvas, { roleCanvas: rc, colorMode, theme })
+ }
+diff -ruN a/package/src/ascii/draw.ts b/package/src/ascii/draw.ts
+--- a/package/src/ascii/draw.ts
++++ b/package/src/ascii/draw.ts
+@@ -14,7 +14,7 @@
+   Up, Down, Left, Right, UpperLeft, UpperRight, LowerLeft, LowerRight, Middle,
+   drawingCoordEquals,
+ } from './types.ts'
+-import { mkCanvas, copyCanvas, getCanvasSize, mergeCanvases, drawText, mkRoleCanvas, setRole, mergeRoleCanvases } from './canvas.ts'
++import { OPAQUE_SPACE, mkCanvas, copyCanvas, getCanvasSize, mergeCanvases, drawText, mkRoleCanvas, setRole, mergeRoleCanvases } from './canvas.ts'
+ import type { RoleCanvas, CharRole } from './types.ts'
+ import { determineDirection, dirEquals } from './edge-routing.ts'
+ import { gridToDrawingCoord, lineToDrawing } from './grid.ts'
+@@ -57,16 +57,15 @@
+   const gc = node.gridCoord!
+   const useAscii = graph.config.useAscii
+ 
+-  // Width spans 2 columns (border + content) - matching original behavior
+-  let w = 0
+-  for (let i = 0; i < 2; i++) {
+-    w += graph.columnWidth.get(gc.x + i) ?? 0
+-  }
+-  // Height spans 2 rows (border + content)
+-  let h = 0
+-  for (let i = 0; i < 2; i++) {
+-    h += graph.rowHeight.get(gc.y + i) ?? 0
+-  }
++  // The box runs from its own point (the middle of its first column and row)
++  // to the middle of the column and row past its content: the points its
++  // edges leave and arrive at. A label that widens one of those columns or
++  // rows then moves the side with it, and never leaves a gap between a box
++  // and its edges.
++  const far = gridToDrawingCoord(graph, { x: gc.x + 2, y: gc.y + 2 })
++  const near = gridToDrawingCoord(graph, gc)
++  const w = far.x - near.x
++  const h = far.y - near.y
+ 
+   const from: DrawingCoord = { x: 0, y: 0 }
+   const to: DrawingCoord = { x: w, y: h }
+@@ -381,7 +380,7 @@
+   graph: AsciiGraph,
+   edge: AsciiEdge,
+ ): [Canvas, Canvas, Canvas, Canvas, Canvas, Canvas] {
+-  if (edge.path.length === 0) {
++  if (edge.path.length === 0 || edge.style === 'invisible') {
+     const empty = copyCanvas(graph.canvas)
+     return [empty, empty, empty, empty, empty, empty]
+   }
+@@ -1239,6 +1238,67 @@
+ }
+ 
+ /**
++ * Where each edge label may move to when its own spot is taken, nearest
++ * first: just above or below its line, then along it.
++ */
++const LABEL_SHIFTS: ReadonlyArray<readonly [number, number]> = [
++  [0, 0], [0, -1], [0, 1], [0, -2], [0, 2], [0, -3], [0, 3],
++  ...[2, 4, 6, 8].flatMap(dx => [[-dx, 0], [dx, 0], [-dx, -1], [dx, -1], [-dx, 1], [dx, 1]] as Array<[number, number]>),
++]
++
++/**
++ * The edge labels, each moved the least distance that keeps it off the
++ * labels placed before it and off every node's box. Drawn where the router
++ * put them, two labels on one stretch of line (two edges between the same
++ * nodes, say) were written over each other, letter through letter. A label
++ * with no free spot nearby stays where it was.
++ */
++function spreadLabels(graph: AsciiGraph, labelCanvases: Canvas[]): Canvas[] {
++  const [maxX, maxY] = getCanvasSize(graph.canvas)
++  const taken = new Set<string>()
++  const key = (x: number, y: number) => `${x},${y}`
++
++  for (const node of graph.nodes) {
++    if (!node.drawingCoord || !node.drawing) continue
++    const [w, h] = getCanvasSize(node.drawing)
++    for (let x = node.drawingCoord.x; x <= node.drawingCoord.x + w; x++) {
++      for (let y = node.drawingCoord.y; y <= node.drawingCoord.y + h; y++) taken.add(key(x, y))
++    }
++  }
++
++  return labelCanvases.map(canvas => {
++    const cells: Array<[number, number, string]> = []
++    for (let x = 0; x < canvas.length; x++) {
++      const col = canvas[x]!
++      for (let y = 0; y < col.length; y++) if (col[y] !== ' ') cells.push([x, y, col[y]!])
++    }
++    if (cells.length === 0) return canvas
++
++    const fits = ([dx, dy]: readonly [number, number]) =>
++      cells.every(([x, y]) => x + dx >= 0 && y + dy >= 0 && x + dx <= maxX && y + dy <= maxY && !taken.has(key(x + dx, y + dy)))
++    const [dx, dy] = LABEL_SHIFTS.find(fits) ?? [0, 0]
++
++    // A label's own row is kept whole (spaces between its words included), so
++    // the next one can't thread its letters through it.
++    const rows = new Map<number, [number, number]>()
++    for (const [x, y] of cells) {
++      const span = rows.get(y)
++      rows.set(y, span ? [Math.min(span[0], x), Math.max(span[1], x)] : [x, x])
++    }
++    for (const [y, [x0, x1]] of rows) for (let x = x0 - 1; x <= x1 + 1; x++) taken.add(key(x + dx, y + dy))
++
++    // The label at its spot, the gaps between its words hiding the line under
++    // them, so it reads "save result", not "save─result".
++    const placed = copyCanvas(canvas)
++    for (const [x, y, ch] of cells) placed[x + dx]![y + dy] = ch
++    for (const [y, [x0, x1]] of rows) {
++      for (let x = x0; x <= x1; x++) if (placed[x + dx]![y + dy] === ' ') placed[x + dx]![y + dy] = OPAQUE_SPACE
++    }
++    return placed
++  })
++}
++
++/**
+  * Main draw function — renders the entire graph onto the canvas.
+  * Drawing order matters for correct layering:
+  * 1. Subgraph borders (bottom layer)
+@@ -1358,8 +1418,9 @@
+   graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...arrowHeadStartCanvases)
+   fillRolesFromCanvases(graph.roleCanvas, arrowHeadStartCanvases, zero, 'arrow')
+ 
+-  graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...labelCanvases)
+-  fillRolesFromCanvases(graph.roleCanvas, labelCanvases, zero, 'text')
++  const placedLabels = spreadLabels(graph, labelCanvases)
++  graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...placedLabels)
++  fillRolesFromCanvases(graph.roleCanvas, placedLabels, zero, 'text')
+ 
+   // Draw subgraph labels last (on top)
+   for (const sg of graph.subgraphs) {
+diff -ruN a/package/src/ascii/edge-bundling.ts b/package/src/ascii/edge-bundling.ts
+--- a/package/src/ascii/edge-bundling.ts
++++ b/package/src/ascii/edge-bundling.ts
+@@ -61,6 +61,7 @@
+   for (const [target, edges] of edgesByTarget) {
+     if (edges.length < 2) continue
+     if (!canBundle(edges, graph)) continue
++    if (!sideBySide(edges.map(e => e.from))) continue
+ 
+     // Check if all edges are already bundled
+     if (edges.some(e => bundledEdges.has(e))) continue
+@@ -101,6 +102,7 @@
+   for (const [source, edges] of edgesBySource) {
+     if (edges.length < 2) continue
+     if (!canBundle(edges, graph)) continue
++    if (!sideBySide(edges.map(e => e.to))) continue
+ 
+     const bundle: EdgeBundle = {
+       type: 'fan-out',
+@@ -123,6 +125,16 @@
+   }
+ 
+   return bundles
++}
++
++/**
++ * Whether the nodes at the far ends of a bundle sit on one row. A bundle is
++ * for links side by side (`A & B --> C`): one from a node on another row
++ * would run its trunk along the others' and read as one of them.
++ */
++function sideBySide(nodes: AsciiNode[]): boolean {
++  const rows = new Set(nodes.map(n => n.gridCoord?.y))
++  return rows.size === 1 && !rows.has(undefined)
+ }
+ 
+ /**
+diff -ruN a/package/src/ascii/sequence.ts b/package/src/ascii/sequence.ts
+--- a/package/src/ascii/sequence.ts
++++ b/package/src/ascii/sequence.ts
+@@ -66,7 +66,11 @@
+   for (const msg of diagram.messages) {
+     const fi = actorIdx.get(msg.from)!
+     const ti = actorIdx.get(msg.to)!
+-    if (fi === ti) continue // self-messages don't affect spacing
++    if (fi === ti) {
++      // Loop (4) + gap (2) + label + gap before the next lifeline (2).
++      if (fi < adjMaxWidth.length) adjMaxWidth[fi] = Math.max(adjMaxWidth[fi]!, maxLineWidth(msg.label) + 8)
++      continue
++    }
+     const lo = Math.min(fi, ti)
+     const hi = Math.max(fi, ti)
+     // Required gap per span = (max line width + arrow decorations) / number of gaps
+@@ -302,18 +306,23 @@
+       for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0, lineChar, 'line')
+       setC(fromX + loopW, y0, useAscii ? '+' : '┐', 'corner')
+ 
+-      // Row 1: vertical on right side + label
+-      setC(fromX + loopW, y0 + 1, V, 'line')
++      // Rows 1..n: vertical on right side + one label line each
++      const labelLines = splitLines(msg.label)
+       const labelX = fromX + loopW + 2
+-      for (let i = 0; i < msg.label.length; i++) {
+-        if (labelX + i < totalW) setC(labelX + i, y0 + 1, msg.label[i]!, 'text')
++      for (let row = 0; row < labelLines.length; row++) {
++        setC(fromX + loopW, y0 + 1 + row, V, 'line')
++        const text = labelLines[row]!
++        for (let i = 0; i < text.length; i++) {
++          if (labelX + i < totalW) setC(labelX + i, y0 + 1 + row, text[i]!, 'text')
++        }
+       }
+ 
+-      // Row 2: arrow-back + horizontal + bottom-right corner
++      // Last row: arrow-back + horizontal + bottom-right corner
++      const yBack = y0 + 1 + labelLines.length
+       const arrowChar = isFilled ? (useAscii ? '<' : '◀') : (useAscii ? '<' : '◁')
+-      setC(fromX, y0 + 2, arrowChar, 'arrow')
+-      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0 + 2, lineChar, 'line')
+-      setC(fromX + loopW, y0 + 2, useAscii ? '+' : '┘', 'corner')
++      setC(fromX, yBack, arrowChar, 'arrow')
++      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, yBack, lineChar, 'line')
++      setC(fromX + loopW, yBack, useAscii ? '+' : '┘', 'corner')
+     } else {
+       // Normal message: label on row above, arrow on row below
+       const labelY = msgLabelY[m]!
+@@ -340,10 +349,12 @@
+         // Arrowhead at destination
+         const ah = isFilled ? (useAscii ? '>' : '▶') : (useAscii ? '>' : '▷')
+         setC(toX, arrowY, ah, 'arrow')
++        if (msg.bidirectional) setC(fromX, arrowY, isFilled ? (useAscii ? '<' : '◀') : (useAscii ? '<' : '◁'), 'arrow')
+       } else {
+         for (let x = toX + 1; x < fromX; x++) setC(x, arrowY, lineChar, 'line')
+         const ah = isFilled ? (useAscii ? '<' : '◀') : (useAscii ? '<' : '◁')
+         setC(toX, arrowY, ah, 'arrow')
++        if (msg.bidirectional) setC(fromX, arrowY, isFilled ? (useAscii ? '>' : '▶') : (useAscii ? '>' : '▷'), 'arrow')
+       }
+     }
+   }
+diff -ruN a/package/src/ascii/types.ts b/package/src/ascii/types.ts
+--- a/package/src/ascii/types.ts
++++ b/package/src/ascii/types.ts
+@@ -88,7 +88,7 @@
+ }
+ 
+ /** Edge line style for ASCII rendering. */
+-export type AsciiEdgeStyle = 'solid' | 'dotted' | 'thick'
++export type AsciiEdgeStyle = 'solid' | 'dotted' | 'thick' | 'invisible'
+ 
+ /** An edge in the ASCII graph, with a routed path. */
+ export interface AsciiEdge {
+diff -ruN a/package/src/class/parser.ts b/package/src/class/parser.ts
+--- a/package/src/class/parser.ts
++++ b/package/src/class/parser.ts
+@@ -243,7 +243,7 @@
+   // Relationship regex — handles all arrow types with optional cardinality and labels
+   // Pattern: FROM ["card"] ARROW ["card"] TO [: label]
+   const match = line.match(
+-    /^(\S+?)\s+(?:"([^"]*?)"\s+)?(<\|--|<\|\.\.|\*--|o--|-->|--\*|--o|--\|>|\.\.>|\.\.\|>|<--|<\.\.?|--)\s+(?:"([^"]*?)"\s+)?(\S+?)(?:\s*:\s*(.+))?$/
++    /^(\S+?)\s+(?:"([^"]*?)"\s+)?(<\|--|<\|\.\.|\*--|o--|-->|--\*|--o|--\|>|\.\.>|\.\.\|>|<--|<\.\.?|--|\.\.)\s+(?:"([^"]*?)"\s+)?(\S+?)(?:\s*:\s*(.+))?$/
+   )
+   if (!match) return null
+ 
+@@ -284,7 +284,8 @@
+     case '<--':  return { type: 'association',  markerAt: 'from' }
+     case '..>':  return { type: 'dependency',   markerAt: 'to' }
+     case '<..':  return { type: 'dependency',   markerAt: 'from' }
+-    case '--':   return { type: 'association',  markerAt: 'to' }
++    case '--':   return { type: 'link',         markerAt: 'to' }
++    case '..':   return { type: 'dashed-link',  markerAt: 'to' }
+     default:     return null
+   }
+ }
+diff -ruN a/package/src/class/renderer.ts b/package/src/class/renderer.ts
+--- a/package/src/class/renderer.ts
++++ b/package/src/class/renderer.ts
+@@ -242,7 +242,7 @@
+   if (rel.points.length < 2) return ''
+ 
+   const pathData = rel.points.map(p => `${p.x},${p.y}`).join(' ')
+-  const isDashed = rel.type === 'dependency' || rel.type === 'realization'
++  const isDashed = rel.type === 'dependency' || rel.type === 'realization' || rel.type === 'dashed-link'
+   const dashArray = isDashed ? ' stroke-dasharray="6 4"' : ''
+ 
+   // Determine markers based on relationship type and which end has the marker
+diff -ruN a/package/src/class/types.ts b/package/src/class/types.ts
+--- a/package/src/class/types.ts
++++ b/package/src/class/types.ts
+@@ -51,6 +51,8 @@
+   | 'association'   // A --> B    (solid line, open arrow)
+   | 'dependency'    // A ..> B    (dashed line, open arrow)
+   | 'realization'   // A ..|> B   (dashed line, hollow triangle)
++  | 'link'          // A -- B     (solid line, no marker)
++  | 'dashed-link'   // A .. B     (dashed line, no marker)
+ 
+ export interface ClassRelationship {
+   from: string
+diff -ruN a/package/src/er/parser.ts b/package/src/er/parser.ts
+--- a/package/src/er/parser.ts
++++ b/package/src/er/parser.ts
+@@ -59,10 +59,22 @@
+     }
+ 
+     // --- Entity block start: `ENTITY_NAME {` ---
+-    const entityBlockMatch = line.match(/^(\S+)\s*\{$/)
++    // An entity's block may give it an alias to show: `A[Account] {` or `A["Account"] {`.
++    const inlineBlockMatch = line.match(/^([^\s[{]+)(?:\[\s*(?:"([^"]*)"|([^\]]*))\s*\])?\s*\{(.*)\}$/)
++    if (inlineBlockMatch) {
++      const entity = ensureEntity(entityMap, inlineBlockMatch[1]!)
++      const alias = inlineBlockMatch[2] ?? inlineBlockMatch[3]
++      if (alias?.trim()) entity.label = normalizeBrTags(alias.trim())
++      entity.attributes.push(...parseInlineAttributes(inlineBlockMatch[4]!))
++      continue
++    }
++
++    const entityBlockMatch = line.match(/^([^\s[{]+)(?:\[\s*(?:"([^"]*)"|([^\]]*))\s*\])?\s*\{$/)
+     if (entityBlockMatch) {
+       const id = entityBlockMatch[1]!
+       const entity = ensureEntity(entityMap, id)
++      const alias = entityBlockMatch[2] ?? entityBlockMatch[3]
++      if (alias?.trim()) entity.label = normalizeBrTags(alias.trim())
+       currentEntity = entity
+       continue
+     }
+@@ -114,7 +126,7 @@
+ 
+   // Extract key constraints
+   const restWithoutComment = rest.replace(/"[^"]*"/, '').trim()
+-  for (const part of restWithoutComment.split(/\s+/)) {
++  for (const part of restWithoutComment.split(/[\s,]+/)) {
+     const upper = part.toUpperCase()
+     if (upper === 'PK' || upper === 'FK' || upper === 'UK') {
+       keys.push(upper as 'PK' | 'FK' | 'UK')
+@@ -134,10 +146,37 @@
+  *
+  * Full pattern example: CUSTOMER ||--o{ ORDER : places
+  */
++/** Mermaid's cardinalities written as words, longest first so a prefix never wins. */
++const WORD_CARDINALITIES: Array<[string, Cardinality]> = [
++  ['zero or more', 'zero-many'], ['zero or many', 'zero-many'], ['one or more', 'many'], ['one or many', 'many'],
++  ['zero or one', 'zero-one'], ['one or zero', 'zero-one'], ['only one', 'one'],
++  ['many(0)', 'zero-many'], ['many(1)', 'many'], ['0+', 'zero-many'], ['1+', 'many'], ['1', 'one'],
++]
++const WORD_CARDINALITY = WORD_CARDINALITIES.map(([w]) => w.replace(/[()+]/g, '\\$&')).join('|')
++const WORD_RELATIONSHIP = new RegExp(
++  `^(\\S+)\\s+(${WORD_CARDINALITY})\\s*(--|\\.\\.|optionally to|to)\\s*(${WORD_CARDINALITY})\\s+(\\S+)\\s*:\\s*(.+)$`,
++)
++
++/** A relationship written in words: `A one or more to zero or many B : label`. */
++function parseWordRelationship(line: string): ErRelationship | null {
++  const m = line.match(WORD_RELATIONSHIP)
++  if (!m) return null
++  const cardinality = (word: string) => WORD_CARDINALITIES.find(([w]) => w === word)![1]
++  const rawLabel = m[6]!.trim().replace(/^["']|["']$/g, '')
++  return {
++    entity1: m[1]!,
++    entity2: m[5]!,
++    cardinality1: cardinality(m[2]!),
++    cardinality2: cardinality(m[4]!),
++    label: normalizeBrTags(rawLabel),
++    identifying: m[3] === '--' || m[3] === 'to',
++  }
++}
++
+ function parseRelationshipLine(line: string): ErRelationship | null {
+   // Match: ENTITY1 <cardinality_and_line> ENTITY2 : label
+   const match = line.match(/^(\S+)\s+([|o}{]+(?:--|\.\.)[|o}{]+)\s+(\S+)\s*:\s*(.+)$/)
+-  if (!match) return null
++  if (!match) return parseWordRelationship(line)
+ 
+   const entity1 = match[1]!
+   const cardinalityStr = match[2]!
+@@ -164,6 +203,31 @@
+ }
+ 
+ /** Parse a cardinality notation string into a Cardinality type */
++/**
++ * The attributes of a block written on one line, in order: each a type and a
++ * name, then any keys (`PK`, `FK`, `UK`, comma-separated or not) and a
++ * quoted comment, as Mermaid reads them.
++ */
++function parseInlineAttributes(body: string): ErAttribute[] {
++  const tokens = body.match(/"[^"]*"|[^\s,]+/g) ?? []
++  const attributes: ErAttribute[] = []
++  let i = 0
++  while (i + 1 < tokens.length) {
++    const attr: ErAttribute = { type: tokens[i]!, name: tokens[i + 1]!, keys: [] }
++    i += 2
++    while (i < tokens.length && /^(PK|FK|UK)$/i.test(tokens[i]!)) {
++      attr.keys.push(tokens[i]!.toUpperCase() as 'PK' | 'FK' | 'UK')
++      i++
++    }
++    if (i < tokens.length && tokens[i]!.startsWith('"')) {
++      attr.comment = normalizeBrTags(tokens[i]!.slice(1, -1))
++      i++
++    }
++    attributes.push(attr)
++  }
++  return attributes
++}
++
+ function parseCardinality(str: string): Cardinality | null {
+   // Normalize: sort the characters to handle both orders (e.g., |o and o|)
+   const sorted = str.split('').sort().join('')
+@@ -175,7 +239,7 @@
+   // One or more: }| or |{ → sorted "|}" or "{|"
+   if (sorted === '|}' || sorted === '{|') return 'many'
+   // Zero or more: o{ or {o → sorted "{o" or "o{"
+-  if (sorted === '{o' || sorted === 'o{') return 'zero-many'
++  if (sorted === '{o' || sorted === 'o{' || sorted === 'o}') return 'zero-many'
+ 
+   return null
+ }
+diff -ruN a/package/src/multiline-utils.ts b/package/src/multiline-utils.ts
+--- a/package/src/multiline-utils.ts
++++ b/package/src/multiline-utils.ts
+@@ -24,6 +24,23 @@
+     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+     .replace(/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g, '<i>$1</i>')
+     .replace(/~~(.+?)~~/g, '<s>$1</s>')
++    .replace(/#(\d+|[a-zA-Z]+);/g, (code, name: string) => decodeEntity(name) ?? code)
++}
++
++/** The HTML entity names Mermaid labels most often use, and what they stand for. */
++const NAMED_ENTITIES: Record<string, string> = {
++  quot: '"', amp: '&', lt: '<', gt: '>', apos: "'", nbsp: ' ', num: '#', semi: ';',
++  colon: ':', comma: ',', lpar: '(', rpar: ')', lsqb: '[', rsqb: ']', lbrace: '{',
++  rbrace: '}', vert: '|', commat: '@', hyphen: '-',
++}
++
++/** The character a Mermaid entity code stands for: a decimal code point or an entity name. */
++function decodeEntity(name: string): string | undefined {
++  if (/^\d+$/.test(name)) {
++    const code = Number(name)
++    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : undefined
++  }
++  return NAMED_ENTITIES[name]
+ }
+ 
+ /**
+diff -ruN a/package/src/parser.ts b/package/src/parser.ts
+--- a/package/src/parser.ts
++++ b/package/src/parser.ts
+@@ -40,13 +40,16 @@
+ // Flowchart parser
+ // ============================================================================
+ 
+-function parseFlowchart(lines: string[]): MermaidGraph {
+-  const headerMatch = lines[0]!.match(/^(?:graph|flowchart)\s+(TD|TB|LR|BT|RL)\s*$/i)
++function parseFlowchart(rawLines: string[]): MermaidGraph {
++  // Mermaid ends a statement at `;` as well as at a line break.
++  const lines = rawLines.flatMap(splitStatements)
++  const headerMatch = lines[0]!.match(/^(?:graph|flowchart)(?:\s+(TD|TB|LR|BT|RL))?\s*$/i)
+   if (!headerMatch) {
+     throw new Error(`Invalid mermaid header: "${lines[0]}". Expected "graph TD", "flowchart LR", "stateDiagram-v2", etc.`)
+   }
+ 
+-  const direction = headerMatch[1]!.toUpperCase() as Direction
++  // A header without a direction is top-down, as in Mermaid.
++  const direction = (headerMatch[1] ?? 'TD').toUpperCase() as Direction
+ 
+   const graph: MermaidGraph = {
+     direction,
+@@ -65,6 +68,13 @@
+   for (let i = 1; i < lines.length; i++) {
+     const line = lines[i]!
+ 
++    // --- click, accTitle, accDescr: no node or edge in them ---
++    if (/^(?:click|accTitle|accDescr)\b/.test(line)) continue
++
++    // --- an edge's properties (`e1@{ animate: true }`): no node in them ---
++    const edgeProps = line.match(/^([\p{L}\p{N}_-]+)@\{/u)
++    if (edgeProps && edgeIds(graph).has(edgeProps[1]!)) continue
++
+     // --- classDef: `classDef name prop:val,prop:val` ---
+     const classDefMatch = line.match(/^classDef\s+(\w+)\s+(.+)$/)
+     if (classDefMatch) {
+@@ -196,8 +206,6 @@
+   // Track all composite state IDs to avoid creating duplicate nodes
+   const compositeStateIds = new Set<string>()
+   // Counter for unique [*] pseudostate IDs
+-  let startCount = 0
+-  let endCount = 0
+ 
+   for (let i = 1; i < lines.length; i++) {
+     const line = lines[i]!
+@@ -269,17 +277,20 @@
+     }
+ 
+     // --- transition: `s1 --> s2` or `s1 --> s2 : label` or `[*] --> s1` ---
+-    const transitionMatch = line.match(/^(\[\*\]|[\w\p{L}-]+)\s*(-->)\s*(\[\*\]|[\w\p{L}-]+)(?:\s*:\s*(.+))?$/u)
++    const transitionMatch = line.match(/^(\[\*\]|[\w\p{L}.-]+)(?::::([\w-]+))?\s*(-->)\s*(\[\*\]|[\w\p{L}.-]+)(?::::([\w-]+))?(?:\s*:\s*(.+))?$/u)
+     if (transitionMatch) {
+       let sourceId = transitionMatch[1]!
+-      let targetId = transitionMatch[3]!
+-      const rawTransitionLabel = transitionMatch[4]?.trim()
++      let targetId = transitionMatch[4]!
++      if (transitionMatch[2]) graph.classAssignments.set(sourceId, transitionMatch[2])
++      if (transitionMatch[5]) graph.classAssignments.set(targetId, transitionMatch[5])
++      const rawTransitionLabel = transitionMatch[6]?.trim()
+       const edgeLabel = rawTransitionLabel ? normalizeBrTags(rawTransitionLabel) : undefined
+ 
+-      // Handle [*] pseudostates — each occurrence gets a unique ID
++      // [*] is the scope's one start state as a source, its one end state as a
++      // target: the diagram's, or the composite state's it is written in.
++      const scope = compositeStack[compositeStack.length - 1]?.id
+       if (sourceId === '[*]') {
+-        startCount++
+-        sourceId = `_start${startCount > 1 ? startCount : ''}`
++        sourceId = scope === undefined ? '_start' : `_start_${scope}`
+         registerStateNode(graph, compositeStack, { id: sourceId, label: '', shape: 'state-start' })
+       } else if (!compositeStateIds.has(sourceId)) {
+         // Only create a node if this isn't a composite state
+@@ -287,8 +298,7 @@
+       }
+ 
+       if (targetId === '[*]') {
+-        endCount++
+-        targetId = `_end${endCount > 1 ? endCount : ''}`
++        targetId = scope === undefined ? '_end' : `_end_${scope}`
+         registerStateNode(graph, compositeStack, { id: targetId, label: '', shape: 'state-end' })
+       } else if (!compositeStateIds.has(targetId)) {
+         // Only create a node if this isn't a composite state
+@@ -307,7 +317,7 @@
+     }
+ 
+     // --- state description: `s1 : Description` ---
+-    const stateDescMatch = line.match(/^([\w\p{L}-]+)\s*:\s*(.+)$/u)
++    const stateDescMatch = line.match(/^([\w\p{L}.-]+)\s*:\s*(.+)$/u)
+     if (stateDescMatch) {
+       const id = stateDescMatch[1]!
+       const label = normalizeBrTags(stateDescMatch[2]!.trim())
+@@ -396,7 +406,7 @@
+  *
+  * Optional label: -->|label text|
+  */
+-const ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/
++const ARROW_REGEX = /^(<|[ox](?=[-=]))?(~{3,}|-{2,}>|-\.+->|={2,}>|-{2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-\.+-[ox](?=[\s\p{L}\p{N}_|]|$)|={2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-{3,}|-\.+-|={3,})(?:\s*\|([^|]*)\|)?/u
+ 
+ /**
+  * Text-embedded label regex — matches "-- label -->", "-. label .->", "== label ==>" syntax.
+@@ -404,40 +414,103 @@
+  *
+  * Based on PR #36 by @liuxiaopai-ai (https://github.com/lukilabs/beautiful-mermaid/pull/36)
+  */
+-const TEXT_ARROW_REGEX = /^(<)?(--|-\.|==)\s+(.+?)\s+(-->|---|\.\->|-\.\-|==>|===)/
++const TEXT_ARROW_REGEX = /^(<|[ox](?=[-=]))?(--|-\.|==)\s*([^-.=\s](?:.*?[^-.=\s])?)\s*(-{2,}>|-{2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-{3,}|\.-+>|\.-+[ox](?=[\s\p{L}\p{N}_|]|$)|\.-+|={2,}>|={2,}[ox](?=[\s\p{L}\p{N}_|]|$)|={3,})/u
+ 
+ /**
+  * Node shape patterns — ordered from most specific delimiters to least.
+  * Multi-char delimiters must be tried before single-char to avoid false matches.
+  */
+-const NODE_PATTERNS: Array<{ regex: RegExp; shape: NodeShape }> = [
+-  // Triple delimiters (must be first)
+-  { regex: /^([\w-]+)\(\(\((.+?)\)\)\)/, shape: 'doublecircle' },  // A(((text)))
++/** A node id: letters of any script, digits, `_`, and `.` or `-` between them. */
++const NODE_ID = String.raw`[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*`
+ 
+-  // Double delimiters with mixed brackets
+-  { regex: /^([\w-]+)\(\[(.+?)\]\)/,     shape: 'stadium' },       // A([text])
+-  { regex: /^([\w-]+)\(\((.+?)\)\)/,     shape: 'circle' },        // A((text))
+-  { regex: /^([\w-]+)\[\[(.+?)\]\]/,     shape: 'subroutine' },    // A[[text]]
+-  { regex: /^([\w-]+)\[\((.+?)\)\]/,     shape: 'cylinder' },      // A[(text)]
++const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+ 
+-  // Trapezoid variants — must come before plain [text]
+-  { regex: /^([\w-]+)\[\/(.+?)\\\]/,     shape: 'trapezoid' },     // A[/text\]
+-  { regex: /^([\w-]+)\[\\(.+?)\/\]/,     shape: 'trapezoid-alt' }, // A[\text/]
++/**
++ * Node shapes by their delimiters, most specific first. A parallelogram
++ * (`[/text/]`, `[\text\]`) is drawn as the trapezoid nearest it.
++ */
++const SHAPE_DELIMITERS: Array<{ open: string; close: string; shape: NodeShape }> = [
++  { open: '(((', close: ')))', shape: 'doublecircle' },
++  { open: '([', close: '])', shape: 'stadium' },
++  { open: '((', close: '))', shape: 'circle' },
++  { open: '[[', close: ']]', shape: 'subroutine' },
++  { open: '[(', close: ')]', shape: 'cylinder' },
++  { open: '[/', close: '\\]', shape: 'trapezoid' },
++  { open: '[\\', close: '/]', shape: 'trapezoid-alt' },
++  { open: '[/', close: '/]', shape: 'trapezoid' },
++  { open: '[\\', close: '\\]', shape: 'trapezoid-alt' },
++  { open: '>', close: ']', shape: 'asymmetric' },
++  { open: '{{', close: '}}', shape: 'hexagon' },
++  { open: '[', close: ']', shape: 'rectangle' },
++  { open: '(', close: ')', shape: 'rounded' },
++  { open: '{', close: '}', shape: 'diamond' },
++]
+ 
+-  // Asymmetric flag shape
+-  { regex: /^([\w-]+)>(.+?)\]/,          shape: 'asymmetric' },    // A>text]
++/**
++ * Each shape with a quoted label first (`A["a (b)"]`, which may hold the
++ * closing delimiter), then a plain one, which never runs past a `]`.
++ */
++const NODE_PATTERNS: Array<{ regex: RegExp; shape: NodeShape }> = SHAPE_DELIMITERS.flatMap(({ open, close, shape }) => [
++  { regex: new RegExp(`^(${NODE_ID})${escapeRegex(open)}\\s*"([^"]*)"\\s*${escapeRegex(close)}`, 'u'), shape },
++  { regex: new RegExp(`^(${NODE_ID})${escapeRegex(open)}([^\\]]+?)${escapeRegex(close)}`, 'u'), shape },
++])
+ 
+-  // Double curly braces (hexagon) — must come before single {text}
+-  { regex: /^([\w-]+)\{\{(.+?)\}\}/,     shape: 'hexagon' },       // A{{text}}
++/** Mermaid 11's `A@{ shape: … }` names, as the shapes drawn here. */
++const SHAPE_NAMES: Record<string, NodeShape> = {
++  rect: 'rectangle', rectangle: 'rectangle', proc: 'rectangle', process: 'rectangle', square: 'rectangle',
++  rounded: 'rounded', event: 'rounded', round: 'rounded',
++  stadium: 'stadium', pill: 'stadium', terminal: 'stadium',
++  subproc: 'subroutine', subprocess: 'subroutine', subroutine: 'subroutine', 'fr-rect': 'subroutine', 'framed-rectangle': 'subroutine',
++  cyl: 'cylinder', cylinder: 'cylinder', database: 'cylinder', db: 'cylinder',
++  circle: 'circle', circ: 'circle',
++  'dbl-circ': 'doublecircle', 'double-circle': 'doublecircle',
++  diam: 'diamond', diamond: 'diamond', decision: 'diamond', question: 'diamond',
++  hex: 'hexagon', hexagon: 'hexagon', prepare: 'hexagon',
++  'trap-b': 'trapezoid', 'trapezoid-bottom': 'trapezoid', priority: 'trapezoid', trapezoid: 'trapezoid',
++  'lean-r': 'trapezoid', 'lean-right': 'trapezoid', 'in-out': 'trapezoid',
++  'trap-t': 'trapezoid-alt', 'trapezoid-top': 'trapezoid-alt', manual: 'trapezoid-alt', 'inv-trapezoid': 'trapezoid-alt',
++  'lean-l': 'trapezoid-alt', 'lean-left': 'trapezoid-alt', 'out-in': 'trapezoid-alt',
++  odd: 'asymmetric',
++}
+ 
+-  // Single-char delimiters (last — most common, least specific)
+-  { regex: /^([\w-]+)\[(.+?)\]/,         shape: 'rectangle' },     // A[text]
+-  { regex: /^([\w-]+)\((.+?)\)/,         shape: 'rounded' },       // A(text)
+-  { regex: /^([\w-]+)\{(.+?)\}/,         shape: 'diamond' },       // A{text}
+-]
++/**
++ * The shape and label of Mermaid 11's `@{ shape: diam, label: "Ok?" }` at the
++ * start of `text`, and the text after it; null when it isn't one.
++ */
++function consumeShapeData(text: string): { shape?: NodeShape; label?: string; rest: string } | null {
++  if (!text.startsWith('@{')) return null
++  let i = 2
++  let quote = false
++  for (; i < text.length; i++) {
++    if (text[i] === '"') quote = !quote
++    else if (text[i] === '}' && !quote) break
++  }
++  if (i >= text.length) return null
++  const body = text.slice(2, i)
++  const field = (key: string) => {
++    const m = new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*("([^"]*)"|[^,]*)`).exec(body)
++    return m ? (m[2] ?? m[1]!).trim() : undefined
++  }
++  const shapeName = field('shape')
++  return { shape: shapeName ? (SHAPE_NAMES[shapeName] ?? 'rectangle') : undefined, label: field('label'), rest: text.slice(i + 1) }
++}
+ 
++/** An edge's id, written just before its link: the `e1@` of `A e1@--> B`. */
++const EDGE_ID_REGEX = /^([\p{L}\p{N}_-]+)@(?=[-=.~<ox])/u
++
++/** The edge ids each graph has named, so a later `e1@{ … }` line is known for an edge's. */
++const edgeIdsOf = new WeakMap<MermaidGraph, Set<string>>()
++function edgeIds(graph: MermaidGraph): Set<string> {
++  let ids = edgeIdsOf.get(graph)
++  if (!ids) {
++    ids = new Set()
++    edgeIdsOf.set(graph, ids)
++  }
++  return ids
++}
++
+ /** Regex for a bare node reference (just an ID, no shape brackets) */
+-const BARE_NODE_REGEX = /^([\w-]+)/
++const BARE_NODE_REGEX = /^([\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*)/u
+ 
+ /** Regex for ::: class shorthand suffix — matches :::className immediately after a node */
+ const CLASS_SHORTHAND_REGEX = /^:::([\w][\w-]*)/
+@@ -462,13 +535,21 @@
+   let prevGroupIds = firstGroup.ids
+ 
+   // Parse arrow + node-group pairs until the line is exhausted
++  let arrowMatch: RegExpMatchArray | null = null
+   while (remaining.length > 0) {
+     let hasArrowStart: boolean
+     let style: EdgeStyle
+     let hasArrowEnd: boolean
+     let edgeLabel: string | undefined
+ 
+-    const arrowMatch = remaining.match(ARROW_REGEX)
++    // Mermaid 11 names an edge with an id before its link: `A e1@--> B`.
++    const edgeId = remaining.match(EDGE_ID_REGEX)
++    if (edgeId) {
++      edgeIds(graph).add(edgeId[1]!)
++      remaining = remaining.slice(edgeId[0].length)
++    }
++
++    arrowMatch = remaining.match(ARROW_REGEX)
+     if (arrowMatch) {
+       hasArrowStart = Boolean(arrowMatch[1])
+       const arrowOp = arrowMatch[2]!
+@@ -476,7 +557,8 @@
+       edgeLabel = rawEdgeLabel ? normalizeBrTags(rawEdgeLabel) : undefined
+       remaining = remaining.slice(arrowMatch[0].length).trim()
+       style = arrowStyleFromOp(arrowOp)
+-      hasArrowEnd = arrowOp.endsWith('>')
++      // A circle or cross end (`--o`, `--x`) is drawn as an arrowhead.
++      hasArrowEnd = /[>ox]$/.test(arrowOp)
+     } else {
+       // Fallback: text-embedded label syntax (-- Yes -->, -. Maybe .->, == Sure ==>)
+       const textMatch = remaining.match(TEXT_ARROW_REGEX)
+@@ -488,7 +570,8 @@
+       const closeOp = textMatch[4]!
+       remaining = remaining.slice(textMatch[0].length).trim()
+       style = textArrowStyleFromOps(openOp, closeOp)
+-      hasArrowEnd = closeOp.endsWith('>')
++      // A circle or cross end (`-- t --o`, `-- t --x`) is drawn as an arrowhead.
++      hasArrowEnd = /[>ox]$/.test(closeOp)
+     }
+ 
+     // Parse the next node group
+@@ -497,6 +580,7 @@
+ 
+     remaining = nextGroup.remaining.trim()
+ 
++
+     // Emit Cartesian product of edges: every source × every target
+     for (const sourceId of prevGroupIds) {
+       for (const targetId of nextGroup.ids) {
+@@ -571,7 +655,8 @@
+     const match = text.match(regex)
+     if (match) {
+       id = match[1]!
+-      const label = normalizeBrTags(match[2]!)
++      const raw = match[2]!
++      const label = normalizeBrTags(/^`[^]*`$/.test(raw) ? raw.slice(1, -1) : raw)
+       registerNode(graph, subgraphStack, { id, label, shape })
+       remaining = text.slice(match[0].length)
+       break
+@@ -579,20 +664,36 @@
+   }
+ 
+   // Bare node reference — only register if node doesn't exist yet.
+-  // If it already exists, do NOT track it in the current subgraph;
+-  // nodes belong to the subgraph where they're first defined.
+   if (id === null) {
+     const bareMatch = text.match(BARE_NODE_REGEX)
+     if (bareMatch) {
+       id = bareMatch[1]!
+-      if (!graph.nodes.has(id)) {
++      remaining = text.slice(bareMatch[0].length)
++      const data = consumeShapeData(remaining)
++      if (data) {
++        // What `@{ }` leaves out, the node keeps.
++        const known = graph.nodes.get(id)
++        const node: MermaidNode = {
++          id,
++          label: data.label !== undefined ? normalizeBrTags(data.label) : (known?.label ?? id),
++          shape: data.shape ?? known?.shape ?? 'rectangle',
++        }
++        if (known) {
++          graph.nodes.set(id, node)
++          unlabeled(graph).delete(id)
++        } else {
++          registerNode(graph, subgraphStack, node)
++        }
++        remaining = data.rest
++      } else if (!graph.nodes.has(id)) {
+         registerNode(graph, subgraphStack, { id, label: id, shape: 'rectangle' })
++        unlabeled(graph).add(id)
+       }
+-      remaining = text.slice(bareMatch[0].length)
+     }
+   }
+ 
+   if (id === null) return null
++  claimForSubgraph(graph, subgraphStack, id)
+ 
+   // Check for ::: class shorthand suffix immediately after the node
+   const classMatch = remaining.match(CLASS_SHORTHAND_REGEX)
+@@ -613,10 +714,79 @@
+   const isNew = !graph.nodes.has(node.id)
+   if (isNew) {
+     graph.nodes.set(node.id, node)
++  } else if (unlabeled(graph).delete(node.id)) {
++    // Named bare first (`A --> B`), labeled later (`B[Label]`): the label wins,
++    // as in Mermaid. The node keeps its place in the order.
++    graph.nodes.set(node.id, node)
+   }
+-  trackInSubgraph(subgraphStack, node.id)
+ }
+ 
++/** The nodes of each graph a subgraph has claimed. */
++const claimedNodes = new WeakMap<MermaidGraph, Set<string>>()
++
++/**
++ * Puts the node in the innermost open subgraph unless one has it already:
++ * as in Mermaid, a node belongs to the first subgraph that names it, whether
++ * it was named outside any subgraph before or not.
++ */
++function claimForSubgraph(graph: MermaidGraph, subgraphStack: MermaidSubgraph[], nodeId: string): void {
++  if (subgraphStack.length === 0) return
++  let claimed = claimedNodes.get(graph)
++  if (!claimed) {
++    claimed = new Set()
++    claimedNodes.set(graph, claimed)
++  }
++  if (claimed.has(nodeId)) return
++  claimed.add(nodeId)
++  trackInSubgraph(subgraphStack, nodeId)
++}
++
++/** The nodes of each graph that are so far only named, never given a shape or label. */
++const unlabeledNodes = new WeakMap<MermaidGraph, Set<string>>()
++function unlabeled(graph: MermaidGraph): Set<string> {
++  let ids = unlabeledNodes.get(graph)
++  if (!ids) {
++    ids = new Set()
++    unlabeledNodes.set(graph, ids)
++  }
++  return ids
++}
++
++/**
++ * One line's statements: Mermaid ends one at `;` as well as at a line break.
++ * A `;` inside a label (brackets, quotes or `|...|`) is the label's.
++ */
++function splitStatements(line: string): string[] {
++  if (!line.includes(';') || line.startsWith('%%')) return [line]
++  const out: string[] = []
++  const close: Record<string, string> = { '[': ']', '(': ')', '{': '}' }
++  const stack: string[] = []
++  let quote = false
++  let pipe = false
++  let start = 0
++  for (let i = 0; i < line.length; i++) {
++    const ch = line[i]!
++    if (quote) {
++      if (ch === '"') quote = false
++    } else if (ch === '"') {
++      quote = true
++    } else if (pipe) {
++      if (ch === '|') pipe = false
++    } else if (ch === '|' && stack.length === 0) {
++      pipe = true
++    } else if (close[ch]) {
++      stack.push(close[ch]!)
++    } else if (ch === stack[stack.length - 1]) {
++      stack.pop()
++    } else if (ch === ';' && stack.length === 0) {
++      out.push(line.slice(start, i).trim())
++      start = i + 1
++    }
++  }
++  out.push(line.slice(start).trim())
++  return out.filter(s => s.length > 0)
++}
++
+ /** Add node ID to the innermost subgraph if we're inside one */
+ function trackInSubgraph(subgraphStack: MermaidSubgraph[], nodeId: string): void {
+   if (subgraphStack.length > 0) {
+@@ -629,17 +799,16 @@
+ 
+ /** Map arrow operator string to edge style (ignoring direction) */
+ function arrowStyleFromOp(op: string): EdgeStyle {
+-  if (op === '-.->') return 'dotted'
+-  if (op === '-.-') return 'dotted'
+-  if (op === '==>') return 'thick'
+-  if (op === '===') return 'thick'
++  if (op.startsWith('~')) return 'invisible'
++  if (op.includes('.')) return 'dotted'
++  if (op.startsWith('=')) return 'thick'
+   // '-->'' and '---' are both solid
+   return 'solid'
+ }
+ 
+ /** Map text-embedded arrow open/close operators to edge style */
+ function textArrowStyleFromOps(openOp: string, closeOp: string): EdgeStyle {
+-  if (openOp === '-.' || closeOp === '.->' || closeOp === '-.-') return 'dotted'
+-  if (openOp === '==' || closeOp === '==>' || closeOp === '===') return 'thick'
++  if (openOp === '-.' || closeOp.startsWith('.')) return 'dotted'
++  if (openOp === '==' || closeOp.startsWith('=')) return 'thick'
+   return 'solid'
+ }
+diff -ruN a/package/src/renderer.ts b/package/src/renderer.ts
+--- a/package/src/renderer.ts
++++ b/package/src/renderer.ts
+@@ -195,7 +195,8 @@
+ // ============================================================================
+ 
+ function renderEdge(edge: PositionedEdge): string {
+-  if (edge.points.length < 2) return ''
++  // An invisible link (`A ~~~ B`) places its nodes and draws nothing.
++  if (edge.points.length < 2 || edge.style === 'invisible') return ''
+ 
+   const pathData = pointsToPolylinePath(edge.points)
+   const dashArray = edge.style === 'dotted' ? ' stroke-dasharray="4 4"' : ''
+diff -ruN a/package/src/sequence/parser.ts b/package/src/sequence/parser.ts
+--- a/package/src/sequence/parser.ts
++++ b/package/src/sequence/parser.ts
+@@ -47,11 +47,14 @@
+     // --- Participant / Actor declaration ---
+     // "participant A as Alice" or "participant Alice"
+     // "actor B as Bob" or "actor Bob"
+-    const actorMatch = line.match(/^(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$/)
++    const actorMatch = line.match(/^(?:create\s+)?(participant|actor)\s+(.+)$/)
+     if (actorMatch) {
+       const type = actorMatch[1] as 'participant' | 'actor'
+-      const id = actorMatch[2]!
+-      const rawLabel = actorMatch[3]?.trim() ?? id
++      // As in Mermaid, `as` gives an alias only after a one-word id; a name
++      // with spaces is the id whole.
++      const aliased = actorMatch[2]!.trim().match(/^(\S+)\s+as\s+(.+)$/)
++      const id = aliased ? aliased[1]! : actorMatch[2]!.trim()
++      const rawLabel = aliased ? aliased[2]!.trim() : id
+       const label = normalizeBrTags(rawLabel)
+       if (!actorIds.has(id)) {
+         actorIds.add(id)
+@@ -88,7 +91,7 @@
+     }
+ 
+     // --- Block start: loop, alt, opt, par, critical, break, rect ---
+-    const blockMatch = line.match(/^(loop|alt|opt|par|critical|break|rect)\s*(.*)$/)
++    const blockMatch = line.match(/^(loop|alt|opt|par|critical|break|rect)\b\s*(.*)$/)
+     if (blockMatch) {
+       const blockType = blockMatch[1] as Block['type']
+       const rawBlockLabel = blockMatch[2]?.trim() ?? ''
+@@ -103,7 +106,7 @@
+     }
+ 
+     // --- Block divider: else, and ---
+-    const dividerMatch = line.match(/^(else|and)\s*(.*)$/)
++    const dividerMatch = line.match(/^(else|and|option)\b\s*(.*)$/)
+     if (dividerMatch && blockStack.length > 0) {
+       const rawDividerLabel = dividerMatch[2]?.trim() ?? ''
+       const label = normalizeBrTags(rawDividerLabel)
+@@ -131,7 +134,7 @@
+     // Patterns: A->>B, A-->>B, A-)B, A--)B, with optional +/- activation
+     // Format: FROM ARROW TO: LABEL
+     const msgMatch = line.match(
+-      /^(\S+?)\s*(--?>?>|--?[)x]|--?>>|--?>)\s*([+-]?)(\S+?)\s*:\s*(.+)$/
++      /^(.+?)\s*(<<-->>|<<->>|--?>?>|--?[)x]|--?>>|--?>)\s*([+-]?)(.+?)\s*:\s*(.*)$/
+     )
+     if (msgMatch) {
+       const from = msgMatch[1]!
+@@ -145,7 +148,8 @@
+       ensureActor(diagram, actorIds, to)
+ 
+       // Determine line style and arrow head from the arrow operator
+-      const lineStyle = arrow.startsWith('--') ? 'dashed' : 'solid'
++      const bidirectional = arrow.startsWith('<<')
++      const lineStyle = arrow.replace(/^<</, '').startsWith('--') ? 'dashed' : 'solid'
+       // ">>" = filled arrow, ")" or ">" alone = open arrow, "x" = cross (treat as filled)
+       const arrowHead = arrow.includes('>>') || arrow.includes('x') ? 'filled' : 'open'
+ 
+@@ -156,6 +160,7 @@
+         lineStyle,
+         arrowHead,
+       }
++      if (bidirectional) msg.bidirectional = true
+ 
+       // Activation/deactivation via +/- prefix on target
+       if (activationMark === '+') msg.activate = true
+diff -ruN a/package/src/sequence/types.ts b/package/src/sequence/types.ts
+--- a/package/src/sequence/types.ts
++++ b/package/src/sequence/types.ts
+@@ -36,6 +36,8 @@
+   activate?: boolean
+   /** Deactivate the source lifeline (-) */
+   deactivate?: boolean
++  /** A two-way arrow (`<<->>`, `<<-->>`): a head at each end */
++  bidirectional?: boolean
+ }
+ 
+ export interface Block {
+diff -ruN a/package/src/types.ts b/package/src/types.ts
+--- a/package/src/types.ts
++++ b/package/src/types.ts
+@@ -54,7 +54,8 @@
+   hasArrowEnd: boolean
+ }
+ 
+-export type EdgeStyle = 'solid' | 'dotted' | 'thick'
++/** `invisible`: an `A ~~~ B` link, which places its nodes and draws nothing. */
++export type EdgeStyle = 'solid' | 'dotted' | 'thick' | 'invisible'
+ 
+ export interface MermaidSubgraph {
+   id: string

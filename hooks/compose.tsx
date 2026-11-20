@@ -4,9 +4,9 @@
 
 import type { Elements, RenderElement } from 'claude-code'
 
-import { paintFor, paintLine } from './paint.ts'
-import type { Diagram, Part } from './plan.ts'
-import type { ViewerProps } from './viewer.tsx'
+import { paintFor, paintLine } from './paint'
+import type { Diagram, Part } from './plan'
+import type { ViewerProps } from './viewer'
 
 /** Draws a run of the reply's markdown the engine's way. */
 export type DrawText = (text: string, isFirstOfReply: boolean) => Promise<RenderElement>

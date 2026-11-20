@@ -1,7 +1,7 @@
 // What a diagram is to this mod, and how a renderer is chosen for one. The
 // hooks reach renderers only through the `Renderers` set `registry.ts` wires.
 
-import type { StyledLine } from './styled.ts'
+import type { StyledLine } from './styled'
 
 /** Draws one kind of diagram as lines of Unicode box art, each cell with its role. */
 export interface DiagramRenderer {

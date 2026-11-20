@@ -2,8 +2,8 @@
 // own in (an approved plan): each diagram that fits becomes a plain block of
 // box art the engine draws with the text around it.
 
-import type { Draw } from './draw.ts'
-import type { Segment } from './fences.ts'
+import type { Draw } from './draw'
+import type { Segment } from './fences'
 
 /** The markdown with its diagrams drawn, or undefined when it holds none. */
 export function inlineDiagrams(segments: Segment[], width: number, draw: Draw): string | undefined {

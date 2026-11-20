@@ -1,5 +1,6 @@
 // The part of beautiful-mermaid's API this mod uses (src/ascii/index.ts,
-// src/er/parser.ts, src/er/types.ts, src/ascii/types.ts, src/parser.ts).
+// src/er/parser.ts, src/er/types.ts, src/ascii/types.ts, src/parser.ts,
+// src/sequence/parser.ts, src/sequence/types.ts).
 
 /** Hex colors (`#rrggbb`) for each role a cell can have. */
 export interface AsciiTheme {
@@ -68,3 +69,16 @@ export interface MermaidGraph {
 
 /** Parses a flowchart or state diagram (its whole text, header included); throws on any other kind. */
 export function parseMermaid(text: string): MermaidGraph
+
+export interface SequenceMessage {
+  from: string
+  to: string
+  label: string
+}
+
+export interface SequenceDiagram {
+  messages: SequenceMessage[]
+}
+
+/** Takes the diagram's trimmed, non-empty, non-comment lines, header included. */
+export function parseSequenceDiagram(lines: string[]): SequenceDiagram

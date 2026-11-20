@@ -12,12 +12,12 @@
 
 import { parseErDiagram } from '../vendor/beautiful-mermaid-ascii.js'
 import type { Cardinality, ErAttribute, ErDiagram, ErEntity, ErRelationship } from '../vendor/beautiful-mermaid-ascii.js'
-import type { DiagramRenderer } from '../diagram.ts'
-import { cellsOf, joinLines, padLine, plain, ROLE, span, styled, trimEnd, widthOf, widthOfLine } from '../styled.ts'
-import type { Role, Span, StyledLine } from '../styled.ts'
-import { drawAscii } from './ascii.ts'
-import { polish } from './polish.ts'
-import type { Cell, Grid } from './polish.ts'
+import type { DiagramRenderer } from '../diagram'
+import { cellsOf, joinLines, padLine, plain, ROLE, span, styled, trimEnd, widthOf, widthOfLine } from '../styled'
+import type { Role, Span, StyledLine } from '../styled'
+import { drawAscii } from './ascii'
+import { polish } from './polish'
+import type { Cell, Grid } from './polish'
 
 const GAP = 2
 
@@ -343,12 +343,14 @@ function relationshipBox(r: ErRelationship, width: number, swapped: boolean): St
 function stampRelationship(grid: Grid, r: ErRelationship, f: Frame, frames: Map<string, Frame>): void {
   const meets = touches(grid, f)
   const { one, verb, other } = textOf(r)
+  const [top] = meets.top
   const isStraight =
+    top !== undefined &&
     meets.top.length === 1 &&
     meets.bottom.length === 1 &&
-    meets.top[0] === meets.bottom[0] &&
+    top === meets.bottom[0] &&
     meets.left.length + meets.right.length === 0 &&
-    meets.top[0] + 2 + textWidth(r) <= f.x1
+    top + 2 + textWidth(r) <= f.x1
   const first = frames.get(r.entity1)!
   const second = frames.get(r.entity2)!
   const above = (e: Frame) => e.y1 < f.y0

@@ -2,9 +2,9 @@ import type { On, RenderSurface } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-import { paintFor } from './paint.ts'
-import { ROLE } from './styled.ts'
-import type { StyledLine } from './styled.ts'
+import { paintFor } from './paint'
+import { ROLE } from './styled'
+import type { StyledLine } from './styled'
 
 const FLOW = '```mermaid\nflowchart TD\n  A[Customer] --> B[Input app]\n  B --> C[(Postgres)]\n```'
 const ERD = '```\nerDiagram\n  ORGANIZATION ||--o{ VALUATION : values\n```'

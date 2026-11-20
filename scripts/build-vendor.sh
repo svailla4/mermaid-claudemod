@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Rebuilds hooks/vendor/beautiful-mermaid-ascii.js from the published npm
-# package, verified against npm's integrity hash. The mod's hooks run without
-# Node or npm, so the library is bundled into one ES module the hooks import.
+# package, verified against npm's integrity hash, with the mod's parser fixes
+# (scripts/patches/beautiful-mermaid.patch) applied. The mod's hooks run
+# without Node or npm, so the library is bundled into one ES module the hooks
+# import.
 #
-# Needs curl, tar, openssl and esbuild 0.28.2 (set ESBUILD to its path, or have
-# `npx` available). Run from anywhere: ./scripts/build-vendor.sh
+# Needs curl, tar, openssl, patch and esbuild 0.28.2 (set ESBUILD to its path,
+# or have `npx` available). Run from anywhere: ./scripts/build-vendor.sh
 set -euo pipefail
 
 VERSION=1.1.3
@@ -28,6 +30,7 @@ fi
 
 tar -xzf "$build/package.tgz" -C "$build"
 mv "$build/package" "$build/beautiful-mermaid"
+patch --quiet --forward -d "$build/beautiful-mermaid" -p2 < "$root/scripts/patches/beautiful-mermaid.patch"
 cp "$root/scripts/vendor-entry.ts" "$build/entry.ts"
 cp "$build/beautiful-mermaid/LICENSE" "$root/hooks/vendor/LICENSE-beautiful-mermaid"
 
@@ -36,7 +39,7 @@ esbuild="${ESBUILD:-npx --yes esbuild@$ESBUILD_VERSION}"
 cd "$root"
 $esbuild .vendor-build/entry.ts --bundle --format=esm --platform=neutral --target=es2022 \
   --legal-comments=inline \
-  --banner:js="// beautiful-mermaid $VERSION (MIT, Craft Docs, github.com/lukilabs/beautiful-mermaid): the ASCII renderer, the flowchart/state parser and the ER parser only. Built by scripts/build-vendor.sh with esbuild $ESBUILD_VERSION; see LICENSE-beautiful-mermaid." \
+  --banner:js="// beautiful-mermaid $VERSION (MIT, Craft Docs, github.com/lukilabs/beautiful-mermaid): the ASCII renderer, the flowchart/state parser and the ER parser only, with scripts/patches/beautiful-mermaid.patch applied. Built by scripts/build-vendor.sh with esbuild $ESBUILD_VERSION; see LICENSE-beautiful-mermaid." \
   --outfile="$out" --log-level=warning
 
 echo "wrote $out"

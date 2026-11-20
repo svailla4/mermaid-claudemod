@@ -1,9 +1,9 @@
 // Class diagrams, drawn by the library, with each class's name as a heading.
 
-import type { DiagramRenderer } from '../diagram.ts'
-import { cellsOf, ROLE } from '../styled.ts'
-import type { StyledLine } from '../styled.ts'
-import { drawAscii } from './ascii.ts'
+import type { DiagramRenderer } from '../diagram'
+import { cellsOf, ROLE } from '../styled'
+import type { StyledLine } from '../styled'
+import { drawAscii } from './ascii'
 
 /**
  * The lines with each class's header (its name, and a `<<stereotype>>` over

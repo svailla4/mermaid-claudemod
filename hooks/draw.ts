@@ -1,10 +1,10 @@
 // Draw one Mermaid diagram as Unicode box art, with the renderer its header
 // picks.
 
-import { diagramBody, headerOf, rendererFor } from './diagram.ts'
-import type { Renderers } from './diagram.ts'
-import { widestLine } from './styled.ts'
-import type { StyledLine } from './styled.ts'
+import { diagramBody, headerOf, rendererFor } from './diagram'
+import type { Renderers } from './diagram'
+import { widestLine } from './styled'
+import type { StyledLine } from './styled'
 
 /**
  * A drawing's lines, uncut, the width of the widest and the kind that drew

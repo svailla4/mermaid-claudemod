@@ -2,10 +2,10 @@
 // draws a few more kinds (`xychart`) and rejects the rest with a message that
 // says what it expected, which the reply shows.
 
-import type { DiagramRenderer } from '../diagram.ts'
-import { ROLE } from '../styled.ts'
-import { drawAscii } from './ascii.ts'
-import type { Finish } from './ascii.ts'
+import type { DiagramRenderer } from '../diagram'
+import { ROLE } from '../styled'
+import { drawAscii } from './ascii'
+import type { Finish } from './ascii'
 
 /**
  * Those kinds are charts, not boxes and edges: their rows are their scale, so

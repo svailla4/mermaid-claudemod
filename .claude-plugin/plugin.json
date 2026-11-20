@@ -14,6 +14,12 @@
       "title": "Ask Claude to write diagrams as Mermaid",
       "description": "Adds a short system-prompt section asking Claude to draw diagrams as mermaid blocks instead of ASCII art.",
       "default": true
+    },
+    "check": {
+      "type": "boolean",
+      "title": "Check Claude's diagrams and have it fix mistakes",
+      "description": "Checks each diagram in Claude's replies for lines Mermaid rejects or the terminal would draw wrong, notes them under the diagram, and sends Claude back once to fix them.",
+      "default": true
     }
   }
 }

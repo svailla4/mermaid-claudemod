@@ -4,8 +4,8 @@
 
 import type { Elements, RenderElement, TextProps } from 'claude-code'
 
-import { ROLE, spansOf } from './styled.ts'
-import type { Role, StyledLine } from './styled.ts'
+import { ROLE, spansOf } from './styled'
+import type { Role, StyledLine } from './styled'
 
 /**
  * The look of each role; a role without one is drawn in the text's own color.

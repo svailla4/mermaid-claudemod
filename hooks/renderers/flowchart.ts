@@ -1,8 +1,8 @@
 // Flowcharts (`flowchart`, `graph`): roomy, then tight, then a left-right
 // chart turned top-down.
 
-import type { DiagramRenderer } from '../diagram.ts'
-import { drawAscii, tight } from './ascii.ts'
+import type { DiagramRenderer } from '../diagram'
+import { drawAscii, tight } from './ascii'
 
 // The keyword must be the whole first token: `graph = build()` is code.
 const HEADER = /^(?:graph|flowchart)(?:\s+(?:TD|TB|BT|LR|RL))?(?:\s*;.*)?\s*$/

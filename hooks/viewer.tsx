@@ -7,9 +7,9 @@
 
 import type { ClientModule } from 'claude-code'
 
-import { paintLine } from './paint.ts'
-import { cellsOf, joinLines, padLine, plain, ROLE, sliceLine, span, styled, widthOf } from './styled.ts'
-import type { StyledLine } from './styled.ts'
+import { paintLine } from './paint'
+import { cellsOf, joinLines, padLine, plain, ROLE, sliceLine, span, styled, widthOf } from './styled'
+import type { StyledLine } from './styled'
 
 export type ViewerProps = { lines: StyledLine[]; width: number; title: string; canScroll: boolean }
 

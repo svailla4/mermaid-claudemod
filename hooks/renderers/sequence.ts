@@ -1,10 +1,10 @@
 // Sequence diagrams: roomy, then tight, then with long message and note text
 // wrapped at 32 and then 20 characters.
 
-import type { DiagramRenderer } from '../diagram.ts'
-import { ROLE } from '../styled.ts'
-import type { StyledLine } from '../styled.ts'
-import { drawAscii, tight } from './ascii.ts'
+import type { DiagramRenderer } from '../diagram'
+import { ROLE } from '../styled'
+import type { StyledLine } from '../styled'
+import { drawAscii, tight } from './ascii'
 
 // A message (`A->>B: text`, any arrow) or a note (`Note over A,B: text`).
 const MESSAGE = /^(\s*(?:Note\b[^:]*|[^:]*?-{1,2}(?:>>|>|x|\))[^:]*):\s*)(.+)$/

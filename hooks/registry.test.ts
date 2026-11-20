@@ -1,11 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { isKnownHeader, rendererFor } from './diagram.ts'
-import type { DiagramRenderer, Renderers } from './diagram.ts'
-import { createDrawer } from './draw.ts'
-import { splitFences } from './fences.ts'
-import { RENDERERS } from './registry.ts'
-import { plain } from './styled.ts'
+import { isKnownHeader, rendererFor } from './diagram'
+import type { DiagramRenderer, Renderers } from './diagram'
+import { createDrawer } from './draw'
+import { splitFences } from './fences'
+import { RENDERERS } from './registry'
+import { plain } from './styled'
 
 // A header of each kind, and the renderer kind it must reach.
 const ROUTES: Array<[string, string]> = [

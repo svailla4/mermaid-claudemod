@@ -1,9 +1,37 @@
-// beautiful-mermaid 1.1.3 (MIT, Craft Docs, github.com/lukilabs/beautiful-mermaid): the ASCII renderer, the flowchart/state parser and the ER parser only. Built by scripts/build-vendor.sh with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
+// beautiful-mermaid 1.1.3 (MIT, Craft Docs, github.com/lukilabs/beautiful-mermaid): the ASCII renderer, the flowchart/state parser and the ER parser only, with scripts/patches/beautiful-mermaid.patch applied. Built by scripts/build-vendor.sh with esbuild 0.28.2; see LICENSE-beautiful-mermaid.
 
 // .vendor-build/beautiful-mermaid/src/multiline-utils.ts
 function normalizeBrTags(label) {
   const unquoted = label.startsWith('"') && label.endsWith('"') ? label.slice(1, -1) : label;
-  return unquoted.replace(/<br\s*\/?>/gi, "\n").replace(/\\n/g, "\n").replace(/<\/?(?:sub|sup|small|mark)\s*>/gi, "").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g, "<i>$1</i>").replace(/~~(.+?)~~/g, "<s>$1</s>");
+  return unquoted.replace(/<br\s*\/?>/gi, "\n").replace(/\\n/g, "\n").replace(/<\/?(?:sub|sup|small|mark)\s*>/gi, "").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/g, "<i>$1</i>").replace(/~~(.+?)~~/g, "<s>$1</s>").replace(/#(\d+|[a-zA-Z]+);/g, (code, name) => decodeEntity(name) ?? code);
+}
+var NAMED_ENTITIES = {
+  quot: '"',
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  apos: "'",
+  nbsp: " ",
+  num: "#",
+  semi: ";",
+  colon: ":",
+  comma: ",",
+  lpar: "(",
+  rpar: ")",
+  lsqb: "[",
+  rsqb: "]",
+  lbrace: "{",
+  rbrace: "}",
+  vert: "|",
+  commat: "@",
+  hyphen: "-"
+};
+function decodeEntity(name) {
+  if (/^\d+$/.test(name)) {
+    const code = Number(name);
+    return code > 0 && code <= 1114111 ? String.fromCodePoint(code) : void 0;
+  }
+  return NAMED_ENTITIES[name];
 }
 
 // .vendor-build/beautiful-mermaid/src/parser.ts
@@ -18,12 +46,13 @@ function parseMermaid(text) {
   }
   return parseFlowchart(lines);
 }
-function parseFlowchart(lines) {
-  const headerMatch = lines[0].match(/^(?:graph|flowchart)\s+(TD|TB|LR|BT|RL)\s*$/i);
+function parseFlowchart(rawLines) {
+  const lines = rawLines.flatMap(splitStatements);
+  const headerMatch = lines[0].match(/^(?:graph|flowchart)(?:\s+(TD|TB|LR|BT|RL))?\s*$/i);
   if (!headerMatch) {
     throw new Error(`Invalid mermaid header: "${lines[0]}". Expected "graph TD", "flowchart LR", "stateDiagram-v2", etc.`);
   }
-  const direction = headerMatch[1].toUpperCase();
+  const direction = (headerMatch[1] ?? "TD").toUpperCase();
   const graph = {
     direction,
     nodes: /* @__PURE__ */ new Map(),
@@ -37,6 +66,9 @@ function parseFlowchart(lines) {
   const subgraphStack = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
+    if (/^(?:click|accTitle|accDescr)\b/.test(line)) continue;
+    const edgeProps = line.match(/^([\p{L}\p{N}_-]+)@\{/u);
+    if (edgeProps && edgeIds(graph).has(edgeProps[1])) continue;
     const classDefMatch = line.match(/^classDef\s+(\w+)\s+(.+)$/);
     if (classDefMatch) {
       const name = classDefMatch[1];
@@ -129,8 +161,6 @@ function parseStateDiagram(lines) {
   };
   const compositeStack = [];
   const compositeStateIds = /* @__PURE__ */ new Set();
-  let startCount = 0;
-  let endCount = 0;
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     const dirMatch = line.match(/^direction\s+(TD|TB|LR|BT|RL)\s*$/i);
@@ -186,22 +216,23 @@ function parseStateDiagram(lines) {
       registerStateNode(graph, compositeStack, { id, label, shape: "rounded" });
       continue;
     }
-    const transitionMatch = line.match(/^(\[\*\]|[\w\p{L}-]+)\s*(-->)\s*(\[\*\]|[\w\p{L}-]+)(?:\s*:\s*(.+))?$/u);
+    const transitionMatch = line.match(/^(\[\*\]|[\w\p{L}.-]+)(?::::([\w-]+))?\s*(-->)\s*(\[\*\]|[\w\p{L}.-]+)(?::::([\w-]+))?(?:\s*:\s*(.+))?$/u);
     if (transitionMatch) {
       let sourceId = transitionMatch[1];
-      let targetId = transitionMatch[3];
-      const rawTransitionLabel = transitionMatch[4]?.trim();
+      let targetId = transitionMatch[4];
+      if (transitionMatch[2]) graph.classAssignments.set(sourceId, transitionMatch[2]);
+      if (transitionMatch[5]) graph.classAssignments.set(targetId, transitionMatch[5]);
+      const rawTransitionLabel = transitionMatch[6]?.trim();
       const edgeLabel = rawTransitionLabel ? normalizeBrTags(rawTransitionLabel) : void 0;
+      const scope = compositeStack[compositeStack.length - 1]?.id;
       if (sourceId === "[*]") {
-        startCount++;
-        sourceId = `_start${startCount > 1 ? startCount : ""}`;
+        sourceId = scope === void 0 ? "_start" : `_start_${scope}`;
         registerStateNode(graph, compositeStack, { id: sourceId, label: "", shape: "state-start" });
       } else if (!compositeStateIds.has(sourceId)) {
         ensureStateNode(graph, compositeStack, sourceId);
       }
       if (targetId === "[*]") {
-        endCount++;
-        targetId = `_end${endCount > 1 ? endCount : ""}`;
+        targetId = scope === void 0 ? "_end" : `_end_${scope}`;
         registerStateNode(graph, compositeStack, { id: targetId, label: "", shape: "state-end" });
       } else if (!compositeStateIds.has(targetId)) {
         ensureStateNode(graph, compositeStack, targetId);
@@ -216,7 +247,7 @@ function parseStateDiagram(lines) {
       });
       continue;
     }
-    const stateDescMatch = line.match(/^([\w\p{L}-]+)\s*:\s*(.+)$/u);
+    const stateDescMatch = line.match(/^([\w\p{L}.-]+)\s*:\s*(.+)$/u);
     if (stateDescMatch) {
       const id = stateDescMatch[1];
       const label = normalizeBrTags(stateDescMatch[2].trim());
@@ -265,41 +296,106 @@ function parseStyleProps(propsStr) {
   }
   return props;
 }
-var ARROW_REGEX = /^(<)?(-->|-.->|==>|---|-\.-|===)(?:\|([^|]*)\|)?/;
-var TEXT_ARROW_REGEX = /^(<)?(--|-\.|==)\s+(.+?)\s+(-->|---|\.\->|-\.\-|==>|===)/;
-var NODE_PATTERNS = [
-  // Triple delimiters (must be first)
-  { regex: /^([\w-]+)\(\(\((.+?)\)\)\)/, shape: "doublecircle" },
-  // A(((text)))
-  // Double delimiters with mixed brackets
-  { regex: /^([\w-]+)\(\[(.+?)\]\)/, shape: "stadium" },
-  // A([text])
-  { regex: /^([\w-]+)\(\((.+?)\)\)/, shape: "circle" },
-  // A((text))
-  { regex: /^([\w-]+)\[\[(.+?)\]\]/, shape: "subroutine" },
-  // A[[text]]
-  { regex: /^([\w-]+)\[\((.+?)\)\]/, shape: "cylinder" },
-  // A[(text)]
-  // Trapezoid variants — must come before plain [text]
-  { regex: /^([\w-]+)\[\/(.+?)\\\]/, shape: "trapezoid" },
-  // A[/text\]
-  { regex: /^([\w-]+)\[\\(.+?)\/\]/, shape: "trapezoid-alt" },
-  // A[\text/]
-  // Asymmetric flag shape
-  { regex: /^([\w-]+)>(.+?)\]/, shape: "asymmetric" },
-  // A>text]
-  // Double curly braces (hexagon) — must come before single {text}
-  { regex: /^([\w-]+)\{\{(.+?)\}\}/, shape: "hexagon" },
-  // A{{text}}
-  // Single-char delimiters (last — most common, least specific)
-  { regex: /^([\w-]+)\[(.+?)\]/, shape: "rectangle" },
-  // A[text]
-  { regex: /^([\w-]+)\((.+?)\)/, shape: "rounded" },
-  // A(text)
-  { regex: /^([\w-]+)\{(.+?)\}/, shape: "diamond" }
-  // A{text}
+var ARROW_REGEX = /^(<|[ox](?=[-=]))?(~{3,}|-{2,}>|-\.+->|={2,}>|-{2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-\.+-[ox](?=[\s\p{L}\p{N}_|]|$)|={2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-{3,}|-\.+-|={3,})(?:\s*\|([^|]*)\|)?/u;
+var TEXT_ARROW_REGEX = /^(<|[ox](?=[-=]))?(--|-\.|==)\s*([^-.=\s](?:.*?[^-.=\s])?)\s*(-{2,}>|-{2,}[ox](?=[\s\p{L}\p{N}_|]|$)|-{3,}|\.-+>|\.-+[ox](?=[\s\p{L}\p{N}_|]|$)|\.-+|={2,}>|={2,}[ox](?=[\s\p{L}\p{N}_|]|$)|={3,})/u;
+var NODE_ID = String.raw`[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*`;
+var escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+var SHAPE_DELIMITERS = [
+  { open: "(((", close: ")))", shape: "doublecircle" },
+  { open: "([", close: "])", shape: "stadium" },
+  { open: "((", close: "))", shape: "circle" },
+  { open: "[[", close: "]]", shape: "subroutine" },
+  { open: "[(", close: ")]", shape: "cylinder" },
+  { open: "[/", close: "\\]", shape: "trapezoid" },
+  { open: "[\\", close: "/]", shape: "trapezoid-alt" },
+  { open: "[/", close: "/]", shape: "trapezoid" },
+  { open: "[\\", close: "\\]", shape: "trapezoid-alt" },
+  { open: ">", close: "]", shape: "asymmetric" },
+  { open: "{{", close: "}}", shape: "hexagon" },
+  { open: "[", close: "]", shape: "rectangle" },
+  { open: "(", close: ")", shape: "rounded" },
+  { open: "{", close: "}", shape: "diamond" }
 ];
-var BARE_NODE_REGEX = /^([\w-]+)/;
+var NODE_PATTERNS = SHAPE_DELIMITERS.flatMap(({ open, close, shape }) => [
+  { regex: new RegExp(`^(${NODE_ID})${escapeRegex(open)}\\s*"([^"]*)"\\s*${escapeRegex(close)}`, "u"), shape },
+  { regex: new RegExp(`^(${NODE_ID})${escapeRegex(open)}([^\\]]+?)${escapeRegex(close)}`, "u"), shape }
+]);
+var SHAPE_NAMES = {
+  rect: "rectangle",
+  rectangle: "rectangle",
+  proc: "rectangle",
+  process: "rectangle",
+  square: "rectangle",
+  rounded: "rounded",
+  event: "rounded",
+  round: "rounded",
+  stadium: "stadium",
+  pill: "stadium",
+  terminal: "stadium",
+  subproc: "subroutine",
+  subprocess: "subroutine",
+  subroutine: "subroutine",
+  "fr-rect": "subroutine",
+  "framed-rectangle": "subroutine",
+  cyl: "cylinder",
+  cylinder: "cylinder",
+  database: "cylinder",
+  db: "cylinder",
+  circle: "circle",
+  circ: "circle",
+  "dbl-circ": "doublecircle",
+  "double-circle": "doublecircle",
+  diam: "diamond",
+  diamond: "diamond",
+  decision: "diamond",
+  question: "diamond",
+  hex: "hexagon",
+  hexagon: "hexagon",
+  prepare: "hexagon",
+  "trap-b": "trapezoid",
+  "trapezoid-bottom": "trapezoid",
+  priority: "trapezoid",
+  trapezoid: "trapezoid",
+  "lean-r": "trapezoid",
+  "lean-right": "trapezoid",
+  "in-out": "trapezoid",
+  "trap-t": "trapezoid-alt",
+  "trapezoid-top": "trapezoid-alt",
+  manual: "trapezoid-alt",
+  "inv-trapezoid": "trapezoid-alt",
+  "lean-l": "trapezoid-alt",
+  "lean-left": "trapezoid-alt",
+  "out-in": "trapezoid-alt",
+  odd: "asymmetric"
+};
+function consumeShapeData(text) {
+  if (!text.startsWith("@{")) return null;
+  let i = 2;
+  let quote = false;
+  for (; i < text.length; i++) {
+    if (text[i] === '"') quote = !quote;
+    else if (text[i] === "}" && !quote) break;
+  }
+  if (i >= text.length) return null;
+  const body = text.slice(2, i);
+  const field = (key) => {
+    const m = new RegExp(`(?:^|,)\\s*${key}\\s*:\\s*("([^"]*)"|[^,]*)`).exec(body);
+    return m ? (m[2] ?? m[1]).trim() : void 0;
+  };
+  const shapeName = field("shape");
+  return { shape: shapeName ? SHAPE_NAMES[shapeName] ?? "rectangle" : void 0, label: field("label"), rest: text.slice(i + 1) };
+}
+var EDGE_ID_REGEX = /^([\p{L}\p{N}_-]+)@(?=[-=.~<ox])/u;
+var edgeIdsOf = /* @__PURE__ */ new WeakMap();
+function edgeIds(graph) {
+  let ids = edgeIdsOf.get(graph);
+  if (!ids) {
+    ids = /* @__PURE__ */ new Set();
+    edgeIdsOf.set(graph, ids);
+  }
+  return ids;
+}
+var BARE_NODE_REGEX = /^([\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*)/u;
 var CLASS_SHORTHAND_REGEX = /^:::([\w][\w-]*)/;
 function parseEdgeLine(line, graph, subgraphStack) {
   let remaining = line.trim();
@@ -307,12 +403,18 @@ function parseEdgeLine(line, graph, subgraphStack) {
   if (!firstGroup || firstGroup.ids.length === 0) return;
   remaining = firstGroup.remaining.trim();
   let prevGroupIds = firstGroup.ids;
+  let arrowMatch = null;
   while (remaining.length > 0) {
     let hasArrowStart;
     let style;
     let hasArrowEnd;
     let edgeLabel;
-    const arrowMatch = remaining.match(ARROW_REGEX);
+    const edgeId = remaining.match(EDGE_ID_REGEX);
+    if (edgeId) {
+      edgeIds(graph).add(edgeId[1]);
+      remaining = remaining.slice(edgeId[0].length);
+    }
+    arrowMatch = remaining.match(ARROW_REGEX);
     if (arrowMatch) {
       hasArrowStart = Boolean(arrowMatch[1]);
       const arrowOp = arrowMatch[2];
@@ -320,7 +422,7 @@ function parseEdgeLine(line, graph, subgraphStack) {
       edgeLabel = rawEdgeLabel ? normalizeBrTags(rawEdgeLabel) : void 0;
       remaining = remaining.slice(arrowMatch[0].length).trim();
       style = arrowStyleFromOp(arrowOp);
-      hasArrowEnd = arrowOp.endsWith(">");
+      hasArrowEnd = /[>ox]$/.test(arrowOp);
     } else {
       const textMatch = remaining.match(TEXT_ARROW_REGEX);
       if (!textMatch) break;
@@ -331,7 +433,7 @@ function parseEdgeLine(line, graph, subgraphStack) {
       const closeOp = textMatch[4];
       remaining = remaining.slice(textMatch[0].length).trim();
       style = textArrowStyleFromOps(openOp, closeOp);
-      hasArrowEnd = closeOp.endsWith(">");
+      hasArrowEnd = /[>ox]$/.test(closeOp);
     }
     const nextGroup = consumeNodeGroup(remaining, graph, subgraphStack);
     if (!nextGroup || nextGroup.ids.length === 0) break;
@@ -372,7 +474,8 @@ function consumeNode(text, graph, subgraphStack) {
     const match = text.match(regex);
     if (match) {
       id = match[1];
-      const label = normalizeBrTags(match[2]);
+      const raw = match[2];
+      const label = normalizeBrTags(/^`[^]*`$/.test(raw) ? raw.slice(1, -1) : raw);
       registerNode(graph, subgraphStack, { id, label, shape });
       remaining = text.slice(match[0].length);
       break;
@@ -382,13 +485,30 @@ function consumeNode(text, graph, subgraphStack) {
     const bareMatch = text.match(BARE_NODE_REGEX);
     if (bareMatch) {
       id = bareMatch[1];
-      if (!graph.nodes.has(id)) {
-        registerNode(graph, subgraphStack, { id, label: id, shape: "rectangle" });
-      }
       remaining = text.slice(bareMatch[0].length);
+      const data = consumeShapeData(remaining);
+      if (data) {
+        const known = graph.nodes.get(id);
+        const node = {
+          id,
+          label: data.label !== void 0 ? normalizeBrTags(data.label) : known?.label ?? id,
+          shape: data.shape ?? known?.shape ?? "rectangle"
+        };
+        if (known) {
+          graph.nodes.set(id, node);
+          unlabeled(graph).delete(id);
+        } else {
+          registerNode(graph, subgraphStack, node);
+        }
+        remaining = data.rest;
+      } else if (!graph.nodes.has(id)) {
+        registerNode(graph, subgraphStack, { id, label: id, shape: "rectangle" });
+        unlabeled(graph).add(id);
+      }
     }
   }
   if (id === null) return null;
+  claimForSubgraph(graph, subgraphStack, id);
   const classMatch = remaining.match(CLASS_SHORTHAND_REGEX);
   if (classMatch) {
     graph.classAssignments.set(id, classMatch[1]);
@@ -400,8 +520,60 @@ function registerNode(graph, subgraphStack, node) {
   const isNew = !graph.nodes.has(node.id);
   if (isNew) {
     graph.nodes.set(node.id, node);
+  } else if (unlabeled(graph).delete(node.id)) {
+    graph.nodes.set(node.id, node);
   }
-  trackInSubgraph(subgraphStack, node.id);
+}
+var claimedNodes = /* @__PURE__ */ new WeakMap();
+function claimForSubgraph(graph, subgraphStack, nodeId) {
+  if (subgraphStack.length === 0) return;
+  let claimed = claimedNodes.get(graph);
+  if (!claimed) {
+    claimed = /* @__PURE__ */ new Set();
+    claimedNodes.set(graph, claimed);
+  }
+  if (claimed.has(nodeId)) return;
+  claimed.add(nodeId);
+  trackInSubgraph(subgraphStack, nodeId);
+}
+var unlabeledNodes = /* @__PURE__ */ new WeakMap();
+function unlabeled(graph) {
+  let ids = unlabeledNodes.get(graph);
+  if (!ids) {
+    ids = /* @__PURE__ */ new Set();
+    unlabeledNodes.set(graph, ids);
+  }
+  return ids;
+}
+function splitStatements(line) {
+  if (!line.includes(";") || line.startsWith("%%")) return [line];
+  const out = [];
+  const close = { "[": "]", "(": ")", "{": "}" };
+  const stack = [];
+  let quote = false;
+  let pipe = false;
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === '"') quote = false;
+    } else if (ch === '"') {
+      quote = true;
+    } else if (pipe) {
+      if (ch === "|") pipe = false;
+    } else if (ch === "|" && stack.length === 0) {
+      pipe = true;
+    } else if (close[ch]) {
+      stack.push(close[ch]);
+    } else if (ch === stack[stack.length - 1]) {
+      stack.pop();
+    } else if (ch === ";" && stack.length === 0) {
+      out.push(line.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.push(line.slice(start).trim());
+  return out.filter((s) => s.length > 0);
 }
 function trackInSubgraph(subgraphStack, nodeId) {
   if (subgraphStack.length > 0) {
@@ -412,15 +584,14 @@ function trackInSubgraph(subgraphStack, nodeId) {
   }
 }
 function arrowStyleFromOp(op) {
-  if (op === "-.->") return "dotted";
-  if (op === "-.-") return "dotted";
-  if (op === "==>") return "thick";
-  if (op === "===") return "thick";
+  if (op.startsWith("~")) return "invisible";
+  if (op.includes(".")) return "dotted";
+  if (op.startsWith("=")) return "thick";
   return "solid";
 }
 function textArrowStyleFromOps(openOp, closeOp) {
-  if (openOp === "-." || closeOp === ".->" || closeOp === "-.-") return "dotted";
-  if (openOp === "==" || closeOp === "==>" || closeOp === "===") return "thick";
+  if (openOp === "-." || closeOp.startsWith(".")) return "dotted";
+  if (openOp === "==" || closeOp.startsWith("=")) return "thick";
   return "solid";
 }
 
@@ -826,6 +997,7 @@ function mergeCanvases(base, offset, useAscii, ...overlays) {
   }
   return merged;
 }
+var OPAQUE_SPACE = "\xA0";
 function canvasToString(canvas, options) {
   const [maxX, maxY] = getCanvasSize(canvas);
   const lines = [];
@@ -836,15 +1008,17 @@ function canvasToString(canvas, options) {
     if (colorMode === "none" || !roleCanvas) {
       let line = "";
       for (let x = 0; x <= maxX; x++) {
-        line += canvas[x][y];
+        const ch = canvas[x][y];
+        line += ch === OPAQUE_SPACE ? " " : ch;
       }
       lines.push(line);
     } else {
       const chars = [];
       const roles = [];
       for (let x = 0; x <= maxX; x++) {
-        chars.push(canvas[x][y]);
-        roles.push(roleCanvas[x]?.[y] ?? null);
+        const ch = canvas[x][y];
+        chars.push(ch === OPAQUE_SPACE ? " " : ch);
+        roles.push(ch === OPAQUE_SPACE ? null : roleCanvas[x]?.[y] ?? null);
       }
       lines.push(colorizeLine(chars, roles, theme, colorMode));
     }
@@ -1422,6 +1596,7 @@ function analyzeEdgeBundles(graph) {
   for (const [target, edges] of edgesByTarget) {
     if (edges.length < 2) continue;
     if (!canBundle(edges, graph)) continue;
+    if (!sideBySide(edges.map((e) => e.from))) continue;
     if (edges.some((e) => bundledEdges.has(e))) continue;
     const bundle = {
       type: "fan-in",
@@ -1450,6 +1625,7 @@ function analyzeEdgeBundles(graph) {
   for (const [source, edges] of edgesBySource) {
     if (edges.length < 2) continue;
     if (!canBundle(edges, graph)) continue;
+    if (!sideBySide(edges.map((e) => e.to))) continue;
     const bundle = {
       type: "fan-out",
       edges: [...edges],
@@ -1467,6 +1643,10 @@ function analyzeEdgeBundles(graph) {
     bundles.push(bundle);
   }
   return bundles;
+}
+function sideBySide(nodes) {
+  const rows = new Set(nodes.map((n) => n.gridCoord?.y));
+  return rows.size === 1 && !rows.has(void 0);
 }
 function canBundle(edges, graph) {
   if (edges.length < 2) return false;
@@ -2157,14 +2337,10 @@ function drawNode(node, graph) {
 function drawBoxWithGridDimensions(node, graph) {
   const gc = node.gridCoord;
   const useAscii = graph.config.useAscii;
-  let w = 0;
-  for (let i = 0; i < 2; i++) {
-    w += graph.columnWidth.get(gc.x + i) ?? 0;
-  }
-  let h = 0;
-  for (let i = 0; i < 2; i++) {
-    h += graph.rowHeight.get(gc.y + i) ?? 0;
-  }
+  const far = gridToDrawingCoord(graph, { x: gc.x + 2, y: gc.y + 2 });
+  const near = gridToDrawingCoord(graph, gc);
+  const w = far.x - near.x;
+  const h = far.y - near.y;
   const from = { x: 0, y: 0 };
   const to = { x: w, y: h };
   const box = mkCanvas(Math.max(from.x, to.x), Math.max(from.y, to.y));
@@ -2342,7 +2518,7 @@ function drawLine(canvas, from, to, offsetFrom, offsetTo, useAscii, style = "sol
   return drawnCoords;
 }
 function drawArrow(graph, edge) {
-  if (edge.path.length === 0) {
+  if (edge.path.length === 0 || edge.style === "invisible") {
     const empty = copyCanvas(graph.canvas);
     return [empty, empty, empty, empty, empty, empty];
   }
@@ -2885,6 +3061,50 @@ function fillRolesForNodeBox(roleCanvas, canvas, offset) {
     }
   }
 }
+var LABEL_SHIFTS = [
+  [0, 0],
+  [0, -1],
+  [0, 1],
+  [0, -2],
+  [0, 2],
+  [0, -3],
+  [0, 3],
+  ...[2, 4, 6, 8].flatMap((dx) => [[-dx, 0], [dx, 0], [-dx, -1], [dx, -1], [-dx, 1], [dx, 1]])
+];
+function spreadLabels(graph, labelCanvases) {
+  const [maxX, maxY] = getCanvasSize(graph.canvas);
+  const taken = /* @__PURE__ */ new Set();
+  const key = (x, y) => `${x},${y}`;
+  for (const node of graph.nodes) {
+    if (!node.drawingCoord || !node.drawing) continue;
+    const [w, h] = getCanvasSize(node.drawing);
+    for (let x = node.drawingCoord.x; x <= node.drawingCoord.x + w; x++) {
+      for (let y = node.drawingCoord.y; y <= node.drawingCoord.y + h; y++) taken.add(key(x, y));
+    }
+  }
+  return labelCanvases.map((canvas) => {
+    const cells = [];
+    for (let x = 0; x < canvas.length; x++) {
+      const col = canvas[x];
+      for (let y = 0; y < col.length; y++) if (col[y] !== " ") cells.push([x, y, col[y]]);
+    }
+    if (cells.length === 0) return canvas;
+    const fits = ([dx2, dy2]) => cells.every(([x, y]) => x + dx2 >= 0 && y + dy2 >= 0 && x + dx2 <= maxX && y + dy2 <= maxY && !taken.has(key(x + dx2, y + dy2)));
+    const [dx, dy] = LABEL_SHIFTS.find(fits) ?? [0, 0];
+    const rows = /* @__PURE__ */ new Map();
+    for (const [x, y] of cells) {
+      const span = rows.get(y);
+      rows.set(y, span ? [Math.min(span[0], x), Math.max(span[1], x)] : [x, x]);
+    }
+    for (const [y, [x0, x1]] of rows) for (let x = x0 - 1; x <= x1 + 1; x++) taken.add(key(x + dx, y + dy));
+    const placed = copyCanvas(canvas);
+    for (const [x, y, ch] of cells) placed[x + dx][y + dy] = ch;
+    for (const [y, [x0, x1]] of rows) {
+      for (let x = x0; x <= x1; x++) if (placed[x + dx][y + dy] === " ") placed[x + dx][y + dy] = OPAQUE_SPACE;
+    }
+    return placed;
+  });
+}
 function drawGraph(graph) {
   const useAscii = graph.config.useAscii;
   const zero = { x: 0, y: 0 };
@@ -2956,8 +3176,9 @@ function drawGraph(graph) {
   fillRolesFromCanvases(graph.roleCanvas, boxStartCanvases, zero, "junction");
   graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...arrowHeadStartCanvases);
   fillRolesFromCanvases(graph.roleCanvas, arrowHeadStartCanvases, zero, "arrow");
-  graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...labelCanvases);
-  fillRolesFromCanvases(graph.roleCanvas, labelCanvases, zero, "text");
+  const placedLabels = spreadLabels(graph, labelCanvases);
+  graph.canvas = mergeCanvases(graph.canvas, zero, useAscii, ...placedLabels);
+  fillRolesFromCanvases(graph.roleCanvas, placedLabels, zero, "text");
   for (const sg of graph.subgraphs) {
     if (sg.nodes.length === 0) continue;
     const [labelCanvas, offset] = drawSubgraphLabel(sg, graph);
@@ -3328,11 +3549,12 @@ function parseSequenceDiagram(lines) {
   const blockStack = [];
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
-    const actorMatch = line.match(/^(participant|actor)\s+(\S+?)(?:\s+as\s+(.+))?$/);
+    const actorMatch = line.match(/^(?:create\s+)?(participant|actor)\s+(.+)$/);
     if (actorMatch) {
       const type = actorMatch[1];
-      const id = actorMatch[2];
-      const rawLabel = actorMatch[3]?.trim() ?? id;
+      const aliased = actorMatch[2].trim().match(/^(\S+)\s+as\s+(.+)$/);
+      const id = aliased ? aliased[1] : actorMatch[2].trim();
+      const rawLabel = aliased ? aliased[2].trim() : id;
       const label = normalizeBrTags(rawLabel);
       if (!actorIds.has(id)) {
         actorIds.add(id);
@@ -3360,7 +3582,7 @@ function parseSequenceDiagram(lines) {
       });
       continue;
     }
-    const blockMatch = line.match(/^(loop|alt|opt|par|critical|break|rect)\s*(.*)$/);
+    const blockMatch = line.match(/^(loop|alt|opt|par|critical|break|rect)\b\s*(.*)$/);
     if (blockMatch) {
       const blockType = blockMatch[1];
       const rawBlockLabel = blockMatch[2]?.trim() ?? "";
@@ -3373,7 +3595,7 @@ function parseSequenceDiagram(lines) {
       });
       continue;
     }
-    const dividerMatch = line.match(/^(else|and)\s*(.*)$/);
+    const dividerMatch = line.match(/^(else|and|option)\b\s*(.*)$/);
     if (dividerMatch && blockStack.length > 0) {
       const rawDividerLabel = dividerMatch[2]?.trim() ?? "";
       const label = normalizeBrTags(rawDividerLabel);
@@ -3395,7 +3617,7 @@ function parseSequenceDiagram(lines) {
       continue;
     }
     const msgMatch = line.match(
-      /^(\S+?)\s*(--?>?>|--?[)x]|--?>>|--?>)\s*([+-]?)(\S+?)\s*:\s*(.+)$/
+      /^(.+?)\s*(<<-->>|<<->>|--?>?>|--?[)x]|--?>>|--?>)\s*([+-]?)(.+?)\s*:\s*(.*)$/
     );
     if (msgMatch) {
       const from = msgMatch[1];
@@ -3405,7 +3627,8 @@ function parseSequenceDiagram(lines) {
       const label = normalizeBrTags(msgMatch[5].trim());
       ensureActor(diagram, actorIds, from);
       ensureActor(diagram, actorIds, to);
-      const lineStyle = arrow.startsWith("--") ? "dashed" : "solid";
+      const bidirectional = arrow.startsWith("<<");
+      const lineStyle = arrow.replace(/^<</, "").startsWith("--") ? "dashed" : "solid";
       const arrowHead = arrow.includes(">>") || arrow.includes("x") ? "filled" : "open";
       const msg = {
         from,
@@ -3414,6 +3637,7 @@ function parseSequenceDiagram(lines) {
         lineStyle,
         arrowHead
       };
+      if (bidirectional) msg.bidirectional = true;
       if (activationMark === "+") msg.activate = true;
       if (activationMark === "-") msg.deactivate = true;
       diagram.messages.push(msg);
@@ -3475,7 +3699,10 @@ function renderSequenceAscii(text, config, colorMode, theme) {
   for (const msg of diagram.messages) {
     const fi = actorIdx.get(msg.from);
     const ti = actorIdx.get(msg.to);
-    if (fi === ti) continue;
+    if (fi === ti) {
+      if (fi < adjMaxWidth.length) adjMaxWidth[fi] = Math.max(adjMaxWidth[fi], maxLineWidth(msg.label) + 8);
+      continue;
+    }
     const lo = Math.min(fi, ti);
     const hi = Math.max(fi, ti);
     const needed = maxLineWidth(msg.label) + 4;
@@ -3644,15 +3871,20 @@ function renderSequenceAscii(text, config, colorMode, theme) {
       setC(fromX, y0, JL, "junction");
       for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0, lineChar, "line");
       setC(fromX + loopW, y0, useAscii ? "+" : "\u2510", "corner");
-      setC(fromX + loopW, y0 + 1, V, "line");
+      const labelLines = splitLines(msg.label);
       const labelX = fromX + loopW + 2;
-      for (let i = 0; i < msg.label.length; i++) {
-        if (labelX + i < totalW) setC(labelX + i, y0 + 1, msg.label[i], "text");
+      for (let row = 0; row < labelLines.length; row++) {
+        setC(fromX + loopW, y0 + 1 + row, V, "line");
+        const text2 = labelLines[row];
+        for (let i = 0; i < text2.length; i++) {
+          if (labelX + i < totalW) setC(labelX + i, y0 + 1 + row, text2[i], "text");
+        }
       }
+      const yBack = y0 + 1 + labelLines.length;
       const arrowChar = isFilled ? useAscii ? "<" : "\u25C0" : useAscii ? "<" : "\u25C1";
-      setC(fromX, y0 + 2, arrowChar, "arrow");
-      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, y0 + 2, lineChar, "line");
-      setC(fromX + loopW, y0 + 2, useAscii ? "+" : "\u2518", "corner");
+      setC(fromX, yBack, arrowChar, "arrow");
+      for (let x = fromX + 1; x < fromX + loopW; x++) setC(x, yBack, lineChar, "line");
+      setC(fromX + loopW, yBack, useAscii ? "+" : "\u2518", "corner");
     } else {
       const labelY = msgLabelY[m];
       const arrowY = msgArrowY[m];
@@ -3672,10 +3904,12 @@ function renderSequenceAscii(text, config, colorMode, theme) {
         for (let x = fromX + 1; x < toX; x++) setC(x, arrowY, lineChar, "line");
         const ah = isFilled ? useAscii ? ">" : "\u25B6" : useAscii ? ">" : "\u25B7";
         setC(toX, arrowY, ah, "arrow");
+        if (msg.bidirectional) setC(fromX, arrowY, isFilled ? useAscii ? "<" : "\u25C0" : useAscii ? "<" : "\u25C1", "arrow");
       } else {
         for (let x = toX + 1; x < fromX; x++) setC(x, arrowY, lineChar, "line");
         const ah = isFilled ? useAscii ? "<" : "\u25C0" : useAscii ? "<" : "\u25C1";
         setC(toX, arrowY, ah, "arrow");
+        if (msg.bidirectional) setC(fromX, arrowY, isFilled ? useAscii ? ">" : "\u25B6" : useAscii ? ">" : "\u25B7", "arrow");
       }
     }
   }
@@ -3924,7 +4158,7 @@ function parseMember(line) {
 }
 function parseRelationship(line) {
   const match = line.match(
-    /^(\S+?)\s+(?:"([^"]*?)"\s+)?(<\|--|<\|\.\.|\*--|o--|-->|--\*|--o|--\|>|\.\.>|\.\.\|>|<--|<\.\.?|--)\s+(?:"([^"]*?)"\s+)?(\S+?)(?:\s*:\s*(.+))?$/
+    /^(\S+?)\s+(?:"([^"]*?)"\s+)?(<\|--|<\|\.\.|\*--|o--|-->|--\*|--o|--\|>|\.\.>|\.\.\|>|<--|<\.\.?|--|\.\.)\s+(?:"([^"]*?)"\s+)?(\S+?)(?:\s*:\s*(.+))?$/
   );
   if (!match) return null;
   const from = match[1];
@@ -3968,7 +4202,9 @@ function parseArrow(arrow) {
     case "<..":
       return { type: "dependency", markerAt: "from" };
     case "--":
-      return { type: "association", markerAt: "to" };
+      return { type: "link", markerAt: "to" };
+    case "..":
+      return { type: "dashed-link", markerAt: "to" };
     default:
       return null;
   }
@@ -3996,7 +4232,7 @@ function buildClassSections(cls) {
   return [header, attrs, methods];
 }
 function getRelMarker(type, markerAt) {
-  const dashed = type === "dependency" || type === "realization";
+  const dashed = type === "dependency" || type === "realization" || type === "dashed-link";
   return { type, markerAt, dashed };
 }
 function getMarkerShape(type, useAscii, direction) {
@@ -4016,6 +4252,12 @@ function getMarkerShape(type, useAscii, direction) {
       return useAscii ? "*" : "\u25C6";
     case "aggregation":
       return useAscii ? "o" : "\u25C7";
+    case "link":
+    case "dashed-link": {
+      const vertical = direction === "up" || direction === "down";
+      if (type === "link") return vertical ? useAscii ? "|" : "\u2502" : useAscii ? "-" : "\u2500";
+      return vertical ? useAscii ? ":" : "\u250A" : useAscii ? "." : "\u254C";
+    }
     case "association":
     case "dependency":
       if (direction === "down") {
@@ -4203,6 +4445,8 @@ function renderClassAscii(text, config, colorMode, theme) {
   const V = useAscii ? "|" : "\u2502";
   const dashH = useAscii ? "." : "\u254C";
   const dashV = useAscii ? ":" : "\u250A";
+  const placedLabels = [];
+  const labelDraws = [];
   for (const rel of diagram.relationships) {
     const fromP = placed.get(rel.from);
     const toP = placed.get(rel.to);
@@ -4358,8 +4602,9 @@ function renderClassAscii(text, config, colorMode, theme) {
         }
       }
     }
-    if (rel.label) {
-      const lines2 = splitLines(rel.label);
+    const relLabel = rel.label;
+    if (relLabel) labelDraws.push(() => {
+      const lines2 = splitLines(relLabel);
       const maxLabelWidth = Math.max(...lines2.map((l) => l.length)) + 2;
       let baseMidY;
       let idealMidX;
@@ -4408,11 +4653,30 @@ function renderClassAscii(text, config, colorMode, theme) {
           }
         }
       }
-      const startY = labelY - halfHeight;
+      let startY = labelY - halfHeight;
+      const spans = (dx, dy) => lines2.map((l, i) => {
+        const start = Math.max(0, idealMidX - Math.floor((l.length + 2) / 2)) + dx;
+        return { y: startY + i + dy, x0: start, x1: start + l.length + 1 };
+      });
+      const clear = (dx, dy) => spans(dx, dy).every((s) => s.x0 >= 0 && s.y >= 0 && !placedLabels.some((p) => p.y === s.y && p.x0 <= s.x1 && s.x0 <= p.x1) && Array.from({ length: s.x1 - s.x0 + 1 }, (_, i) => s.x0 + i).every((x) => !isInsideBox(x, s.y, excludeIds)));
+      const toward = toCX >= fromCX ? 1 : -1;
+      let shiftX = 0;
+      if (!clear(0, 0)) {
+        const tries = [];
+        for (let k = 1; k <= maxLabelWidth + 2; k++) tries.push([toward * k, 0]);
+        for (const dy of [-1, 1, -2, 2]) tries.push([0, dy]);
+        for (let k = 1; k <= maxLabelWidth + 2; k++) tries.push([-toward * k, 0]);
+        const found = tries.find(([dx, dy]) => clear(dx, dy));
+        if (found) {
+          shiftX = found[0];
+          startY += found[1];
+        }
+      }
+      placedLabels.push(...spans(shiftX, 0));
       for (let lineIdx = 0; lineIdx < lines2.length; lineIdx++) {
         const paddedLine = ` ${lines2[lineIdx]} `;
         const idealLabelStart = idealMidX - Math.floor(paddedLine.length / 2);
-        const labelStart = Math.max(0, idealLabelStart);
+        const labelStart = Math.max(0, idealLabelStart) + shiftX;
         const y = startY + lineIdx;
         const labelEnd = labelStart + paddedLine.length;
         if (labelEnd > 0 && y >= 0) {
@@ -4426,8 +4690,9 @@ function renderClassAscii(text, config, colorMode, theme) {
           }
         }
       }
-    }
+    });
   }
+  for (const drawLabel of labelDraws) drawLabel();
   return canvasToString(canvas, { roleCanvas: rc, colorMode, theme });
 }
 
@@ -4452,10 +4717,20 @@ function parseErDiagram(lines) {
       }
       continue;
     }
-    const entityBlockMatch = line.match(/^(\S+)\s*\{$/);
+    const inlineBlockMatch = line.match(/^([^\s[{]+)(?:\[\s*(?:"([^"]*)"|([^\]]*))\s*\])?\s*\{(.*)\}$/);
+    if (inlineBlockMatch) {
+      const entity = ensureEntity(entityMap, inlineBlockMatch[1]);
+      const alias = inlineBlockMatch[2] ?? inlineBlockMatch[3];
+      if (alias?.trim()) entity.label = normalizeBrTags(alias.trim());
+      entity.attributes.push(...parseInlineAttributes(inlineBlockMatch[4]));
+      continue;
+    }
+    const entityBlockMatch = line.match(/^([^\s[{]+)(?:\[\s*(?:"([^"]*)"|([^\]]*))\s*\])?\s*\{$/);
     if (entityBlockMatch) {
       const id = entityBlockMatch[1];
       const entity = ensureEntity(entityMap, id);
+      const alias = entityBlockMatch[2] ?? entityBlockMatch[3];
+      if (alias?.trim()) entity.label = normalizeBrTags(alias.trim());
       currentEntity = entity;
       continue;
     }
@@ -4491,7 +4766,7 @@ function parseAttribute(line) {
     comment = normalizeBrTags(commentMatch[1]);
   }
   const restWithoutComment = rest.replace(/"[^"]*"/, "").trim();
-  for (const part of restWithoutComment.split(/\s+/)) {
+  for (const part of restWithoutComment.split(/[\s,]+/)) {
     const upper = part.toUpperCase();
     if (upper === "PK" || upper === "FK" || upper === "UK") {
       keys.push(upper);
@@ -4499,9 +4774,41 @@ function parseAttribute(line) {
   }
   return { type, name, keys, comment };
 }
+var WORD_CARDINALITIES = [
+  ["zero or more", "zero-many"],
+  ["zero or many", "zero-many"],
+  ["one or more", "many"],
+  ["one or many", "many"],
+  ["zero or one", "zero-one"],
+  ["one or zero", "zero-one"],
+  ["only one", "one"],
+  ["many(0)", "zero-many"],
+  ["many(1)", "many"],
+  ["0+", "zero-many"],
+  ["1+", "many"],
+  ["1", "one"]
+];
+var WORD_CARDINALITY = WORD_CARDINALITIES.map(([w]) => w.replace(/[()+]/g, "\\$&")).join("|");
+var WORD_RELATIONSHIP = new RegExp(
+  `^(\\S+)\\s+(${WORD_CARDINALITY})\\s*(--|\\.\\.|optionally to|to)\\s*(${WORD_CARDINALITY})\\s+(\\S+)\\s*:\\s*(.+)$`
+);
+function parseWordRelationship(line) {
+  const m = line.match(WORD_RELATIONSHIP);
+  if (!m) return null;
+  const cardinality = (word) => WORD_CARDINALITIES.find(([w]) => w === word)[1];
+  const rawLabel = m[6].trim().replace(/^["']|["']$/g, "");
+  return {
+    entity1: m[1],
+    entity2: m[5],
+    cardinality1: cardinality(m[2]),
+    cardinality2: cardinality(m[4]),
+    label: normalizeBrTags(rawLabel),
+    identifying: m[3] === "--" || m[3] === "to"
+  };
+}
 function parseRelationshipLine(line) {
   const match = line.match(/^(\S+)\s+([|o}{]+(?:--|\.\.)[|o}{]+)\s+(\S+)\s*:\s*(.+)$/);
-  if (!match) return null;
+  if (!match) return parseWordRelationship(line);
   const entity1 = match[1];
   const cardinalityStr = match[2];
   const entity2 = match[3];
@@ -4518,12 +4825,31 @@ function parseRelationshipLine(line) {
   if (!cardinality1 || !cardinality2) return null;
   return { entity1, entity2, cardinality1, cardinality2, label, identifying };
 }
+function parseInlineAttributes(body) {
+  const tokens = body.match(/"[^"]*"|[^\s,]+/g) ?? [];
+  const attributes = [];
+  let i = 0;
+  while (i + 1 < tokens.length) {
+    const attr = { type: tokens[i], name: tokens[i + 1], keys: [] };
+    i += 2;
+    while (i < tokens.length && /^(PK|FK|UK)$/i.test(tokens[i])) {
+      attr.keys.push(tokens[i].toUpperCase());
+      i++;
+    }
+    if (i < tokens.length && tokens[i].startsWith('"')) {
+      attr.comment = normalizeBrTags(tokens[i].slice(1, -1));
+      i++;
+    }
+    attributes.push(attr);
+  }
+  return attributes;
+}
 function parseCardinality(str) {
   const sorted = str.split("").sort().join("");
   if (sorted === "||") return "one";
   if (sorted === "o|") return "zero-one";
   if (sorted === "|}" || sorted === "{|") return "many";
-  if (sorted === "{o" || sorted === "o{") return "zero-many";
+  if (sorted === "{o" || sorted === "o{" || sorted === "o}") return "zero-many";
   return null;
 }
 
@@ -5559,5 +5885,6 @@ function renderMermaidASCII(text, options = {}) {
 export {
   parseErDiagram,
   parseMermaid,
+  parseSequenceDiagram,
   renderMermaidASCII
 };

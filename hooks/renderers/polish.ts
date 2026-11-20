@@ -2,8 +2,8 @@
 // role it shows, mend the junctions it leaves broken and drop the rows that
 // only stretch it.
 
-import { ROLE } from '../styled.ts'
-import type { Role } from '../styled.ts'
+import { ROLE } from '../styled'
+import type { Role } from '../styled'
 
 /** One cell of a drawing. */
 export type Cell = { ch: string; role: Role }

@@ -1,8 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { createDrawer } from './draw.ts'
-import { RENDERERS } from './registry.ts'
-import { longestPath, MAX_PATH } from './renderers/guard.ts'
+import { createDrawer } from './draw'
+import { RENDERERS } from './registry'
+import { longestPath, MAX_PATH } from './renderers/guard'
 
 const chain = (nodes: number, header = 'flowchart TD') =>
   [header, ...Array.from({ length: nodes - 1 }, (_, i) => `  N${i} --> N${i + 1}`)].join('\n')
